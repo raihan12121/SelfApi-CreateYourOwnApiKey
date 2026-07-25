@@ -66,28 +66,37 @@ pub async fn start_download(
     let destination = target_path(&quantization.filename)?;
 
     if destination.exists() {
-        let installed = register_installed_model(
-            &model.id,
-            &model.name,
-            &quantization.id,
-            &quantization.filename,
-            &destination,
-        )?;
+        let existing_size = std::fs::metadata(&destination)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if existing_size == 0 {
+            let _ = std::fs::remove_file(&destination);
+        } else if existing_size < quantization.file_size_bytes {
+            let _ = std::fs::remove_file(&destination);
+        } else {
+            let installed = register_installed_model(
+                &model.id,
+                &model.name,
+                &quantization.id,
+                &quantization.filename,
+                &destination,
+            )?;
 
-        let progress = DownloadProgress {
-            model_id: model.id.clone(),
-            quantization_id: quantization.id.clone(),
-            status: DownloadStatus::Completed,
-            bytes_downloaded: installed.file_size_bytes,
-            total_bytes: Some(installed.file_size_bytes),
-            progress_percent: Some(100.0),
-            file_path: Some(installed.file_path),
-            error: None,
-        };
+            let progress = DownloadProgress {
+                model_id: model.id.clone(),
+                quantization_id: quantization.id.clone(),
+                status: DownloadStatus::Completed,
+                bytes_downloaded: installed.file_size_bytes,
+                total_bytes: Some(installed.file_size_bytes),
+                progress_percent: Some(100.0),
+                file_path: Some(installed.file_path),
+                error: None,
+            };
 
-        state.set(&model.id, progress.clone());
-        emit_progress(&app, &progress);
-        return Ok(progress);
+            state.set(&model.id, progress.clone());
+            emit_progress(&app, &progress);
+            return Ok(progress);
+        }
     }
 
     let initial = DownloadProgress {
@@ -155,6 +164,7 @@ pub async fn start_download(
             state.set(&model.id, progress.clone());
             emit_progress(&app, &progress);
             let _ = tokio::fs::remove_file(&destination).await;
+            let _ = tokio::fs::remove_file(partial_path(&destination)).await;
             Err(error)
         }
     }
@@ -201,9 +211,10 @@ async fn download_file(
         let _ = tokio::fs::create_dir_all(parent).await;
     }
 
-    let mut file = File::create(destination)
+    let temp_destination = partial_path(destination);
+    let mut file = File::create(&temp_destination)
         .await
-        .map_err(|error| format!("Failed to create destination file {:?}: {}", destination, error))?;
+        .map_err(|error| format!("Failed to create destination file {:?}: {}", temp_destination, error))?;
 
     let mut bytes_downloaded = 0_u64;
     let mut last_emit_bytes = 0_u64;
@@ -215,7 +226,7 @@ async fn download_file(
             .map_err(|error| format!("Disk write error: {}", error))?;
         bytes_downloaded += chunk.len() as u64;
 
-        if bytes_downloaded - last_emit_bytes > 512 * 1024 || bytes_downloaded == total_bytes.unwrap_or(0) {
+        if bytes_downloaded - last_emit_bytes > 512 * 1024 || total_bytes == Some(bytes_downloaded) {
             last_emit_bytes = bytes_downloaded;
             let progress = DownloadProgress {
                 model_id: model_id.to_string(),
@@ -234,6 +245,30 @@ async fn download_file(
     }
 
     file.flush().await.map_err(|error| format!("Failed to flush file to disk: {}", error))?;
+    drop(file);
+
+    if let Some(expected) = total_bytes {
+        if bytes_downloaded != expected {
+            let _ = tokio::fs::remove_file(&temp_destination).await;
+            return Err(format!(
+                "Download incomplete for {model_id}: received {bytes_downloaded} bytes, expected {expected}."
+            ));
+        }
+    }
+
+    tokio::fs::rename(&temp_destination, destination)
+        .await
+        .map_err(|error| format!("Failed to finalize downloaded model {:?}: {}", destination, error))?;
     Ok(())
+}
+
+fn partial_path(destination: &PathBuf) -> PathBuf {
+    let mut partial = destination.clone();
+    let extension = destination
+        .extension()
+        .map(|ext| format!("{}.part", ext.to_string_lossy()))
+        .unwrap_or_else(|| "part".to_string());
+    partial.set_extension(extension);
+    partial
 }
 

@@ -14,11 +14,11 @@ pub struct FallbackConfig {
 impl Default for FallbackConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             provider: "groq".into(),
             model: "llama-3.3-70b-versatile".into(),
             latency_threshold_ms: 2500,
-            api_key: Some("gsk-selfapi-fallback-demo".into()),
+            api_key: None,
         }
     }
 }
@@ -47,12 +47,12 @@ impl FallbackRouter {
         Self {
             config: Mutex::new(FallbackConfig::default()),
             active: AtomicBool::new(false),
-            counter: AtomicU64::new(14),
+            counter: AtomicU64::new(0),
         }
     }
 
     pub fn get_status(&self) -> FallbackStatus {
-        let cfg = self.config.lock().unwrap().clone();
+        let cfg = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
         FallbackStatus {
             config: cfg,
             active_fallback: self.active.load(Ordering::Relaxed),
@@ -61,7 +61,7 @@ impl FallbackRouter {
     }
 
     pub fn set_config(&self, new_cfg: FallbackConfig) -> FallbackStatus {
-        let mut cfg = self.config.lock().unwrap();
+        let mut cfg = self.config.lock().unwrap_or_else(|e| e.into_inner());
         *cfg = new_cfg;
         drop(cfg);
         self.get_status()
@@ -69,7 +69,7 @@ impl FallbackRouter {
 
     #[allow(dead_code)]
     pub fn should_fallback(&self, local_offline: bool, queue_latency_ms: u32) -> bool {
-        let cfg = self.config.lock().unwrap();
+        let cfg = self.config.lock().unwrap_or_else(|e| e.into_inner());
         if !cfg.enabled {
             return false;
         }
@@ -90,6 +90,10 @@ mod tests {
     #[test]
     fn fallback_triggers_on_offline_or_latency() {
         let router = FallbackRouter::new();
+        router.set_config(FallbackConfig {
+            enabled: true,
+            ..Default::default()
+        });
         assert!(router.should_fallback(true, 100));
         assert!(router.should_fallback(false, 3000));
         assert!(!router.should_fallback(false, 500));

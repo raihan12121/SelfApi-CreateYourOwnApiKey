@@ -26,8 +26,8 @@ impl Default for TunnelClient {
 impl TunnelClient {
     pub fn new(agent_slug: &str) -> Self {
         Self {
-            connected: Arc::new(AtomicBool::new(true)),
-            bytes_count: Arc::new(AtomicU64::new(1024 * 48)),
+            connected: Arc::new(AtomicBool::new(false)),
+            bytes_count: Arc::new(AtomicU64::new(0)),
             agent_slug: agent_slug.to_string(),
         }
     }
@@ -62,6 +62,8 @@ mod tests {
     fn tunnel_client_formats_public_url() {
         let client = TunnelClient::new("test-node-123");
         assert_eq!(client.public_url(), "https://test-node-123.selfapi.site/v1");
-        assert!(client.get_status().connected);
+        assert!(!client.get_status().connected);
+        let toggled = client.toggle();
+        assert!(toggled.connected);
     }
 }

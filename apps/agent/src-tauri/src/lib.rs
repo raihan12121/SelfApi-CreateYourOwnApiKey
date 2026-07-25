@@ -108,11 +108,13 @@ fn cmd_get_server_status(
 
 #[tauri::command]
 fn cmd_hot_swap_model(
+    server: State<'_, Arc<ServerManager>>,
     hotswap: State<'_, Arc<HotSwapManager>>,
     model_id: String,
 ) -> Result<ActiveModelRuntimeInfo, String> {
     let info = hotswap.hot_swap(&model_id)?;
-    let _ = prepare_api_access(&model_id);
+    let access = prepare_api_access(&model_id)?;
+    server.set_active(Some(access.secret_key), Some(model_id));
     Ok(info)
 }
 
@@ -174,13 +176,19 @@ fn cmd_open_dashboard() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let server_manager = Arc::new(ServerManager::new(8787));
     let hotswap_manager = Arc::new(HotSwapManager::new());
     let tunnel_client = Arc::new(TunnelClient::new("gpu-node-9f82"));
     let fallback_router = Arc::new(FallbackRouter::new());
     let marketplace_manager = Arc::new(MarketplaceManager::new());
+    let server_manager = Arc::new(ServerManager::new(
+        8787,
+        Arc::clone(&hotswap_manager),
+        Arc::clone(&fallback_router),
+        Arc::clone(&tunnel_client),
+        Arc::clone(&marketplace_manager),
+    ));
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(DownloadState::default())
         .manage(server_manager)
@@ -210,11 +218,11 @@ pub fn run() {
             cmd_add_custom_gguf_file,
             cmd_open_dashboard,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(move |_app_handle, _event| {});
 }
-
-
 
 
 

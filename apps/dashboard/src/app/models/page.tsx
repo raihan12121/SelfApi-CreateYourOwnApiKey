@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { checkAgentHealth } from "@/lib/store";
+import { checkAgentHealth, getApiEndpoint } from "@/lib/store";
 
 type ModelItem = {
   id: string;
@@ -92,25 +92,21 @@ export default function ModelsPage() {
   const handleHotSwap = async (targetId: string) => {
     setSwappingId(targetId);
     try {
-      await fetch("http://127.0.0.1:8787/v1/models/swap", {
+      const res = await fetch(`${getApiEndpoint()}/v1/models/swap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_id: targetId }),
       });
-      setModels((prev) =>
-        prev.map((m) => ({
-          ...m,
-          status: m.id === targetId ? "active" : m.status === "active" ? "installed" : m.status,
-        })),
-      );
+      if (res.ok) {
+        setModels((prev) =>
+          prev.map((m) => ({
+            ...m,
+            status: m.id === targetId ? "active" : m.status === "active" ? "installed" : m.status,
+          })),
+        );
+      }
     } catch {
-      // Offline fallback
-      setModels((prev) =>
-        prev.map((m) => ({
-          ...m,
-          status: m.id === targetId ? "active" : m.status === "active" ? "installed" : m.status,
-        })),
-      );
+      // server offline
     } finally {
       setSwappingId(null);
     }

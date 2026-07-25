@@ -33,6 +33,7 @@ pub fn prepare_api_access(model_id: &str) -> Result<ApiAccessResponse, String> {
 
     let record = StoredApiKey {
         key_id: generate_key_id(),
+        name: format!("Agent Key ({})", m_name),
         secret_key: generate_secret_key(),
         endpoint_url: local_endpoint_url(DEFAULT_LOCAL_PORT),
         custom_domain: Some("api.mycompany.com".into()),

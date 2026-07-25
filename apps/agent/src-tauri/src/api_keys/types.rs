@@ -28,6 +28,8 @@ pub struct ApiAccessResponse {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StoredApiKey {
     pub key_id: String,
+    #[serde(default)]
+    pub name: String,
     pub secret_key: String,
     pub endpoint_url: String,
     #[serde(default)]
@@ -49,6 +51,8 @@ pub struct StoredApiKey {
 pub struct ApiKeyStore {
     pub local_port: u16,
     pub active_key: Option<StoredApiKey>,
+    #[serde(default)]
+    pub keys: Vec<StoredApiKey>,
 }
 
 impl Default for ApiKeyStore {
@@ -56,6 +60,7 @@ impl Default for ApiKeyStore {
         Self {
             local_port: DEFAULT_LOCAL_PORT,
             active_key: None,
+            keys: Vec::new(),
         }
     }
 }

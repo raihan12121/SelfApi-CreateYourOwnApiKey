@@ -1,9 +1,15 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::time::{timeout, Duration};
+
+use crate::fallback::FallbackRouter;
+use crate::marketplace::MarketplaceManager;
+use crate::runtime::HotSwapManager;
+use crate::tunnel::TunnelClient;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalServerStatus {
@@ -109,30 +115,70 @@ pub struct EmbeddingResponse {
 pub struct ServerManager {
     running: Arc<AtomicBool>,
     requests_count: Arc<AtomicU64>,
+    runtime: Arc<Mutex<ServerRuntimeState>>,
+    hotswap: Arc<HotSwapManager>,
+    fallback: Arc<FallbackRouter>,
+    tunnel: Arc<TunnelClient>,
+    marketplace: Arc<MarketplaceManager>,
     port: u16,
 }
 
+#[derive(Debug, Clone)]
+struct ServerRuntimeState {
+    active_key: Option<String>,
+    active_model: String,
+}
+
 impl ServerManager {
-    pub fn new(port: u16) -> Self {
+    pub fn new(
+        port: u16,
+        hotswap: Arc<HotSwapManager>,
+        fallback: Arc<FallbackRouter>,
+        tunnel: Arc<TunnelClient>,
+        marketplace: Arc<MarketplaceManager>,
+    ) -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
             requests_count: Arc::new(AtomicU64::new(0)),
+            runtime: Arc::new(Mutex::new(ServerRuntimeState {
+                active_key: None,
+                active_model: "llama-3.2-3b-instruct".into(),
+            })),
+            hotswap,
+            fallback,
+            tunnel,
+            marketplace,
             port,
         }
     }
 
+    pub fn set_active(&self, active_key: Option<String>, active_model: Option<String>) {
+        if let Ok(mut runtime) = self.runtime.lock() {
+            if active_key.is_some() {
+                runtime.active_key = active_key;
+            }
+            if let Some(model) = active_model {
+                runtime.active_model = model;
+            }
+        }
+    }
+
     pub fn get_status(&self, active_model: Option<String>) -> LocalServerStatus {
+        if active_model.is_some() {
+            self.set_active(None, active_model);
+        }
         let is_running = self.running.load(Ordering::Relaxed);
         LocalServerStatus {
             running: is_running,
             port: self.port,
             endpoint_url: format!("http://127.0.0.1:{}/v1", self.port),
-            active_model,
+            active_model: self.runtime.lock().ok().map(|state| state.active_model.clone()),
             requests_handled: self.requests_count.load(Ordering::Relaxed),
         }
     }
 
     pub async fn start(&self, active_key: Option<String>, active_model: Option<String>) -> Result<LocalServerStatus, String> {
+        self.set_active(active_key, active_model.clone());
         if self.running.load(Ordering::Relaxed) {
             return Ok(self.get_status(active_model));
         }
@@ -145,8 +191,11 @@ impl ServerManager {
         self.running.store(true, Ordering::Relaxed);
         let running_flag = Arc::clone(&self.running);
         let counter_flag = Arc::clone(&self.requests_count);
-        let key_filter = active_key.clone();
-        let model_name = active_model.clone().unwrap_or_else(|| "llama-3.2-3b-instruct".into());
+        let runtime_state = Arc::clone(&self.runtime);
+        let hotswap = Arc::clone(&self.hotswap);
+        let fallback = Arc::clone(&self.fallback);
+        let tunnel = Arc::clone(&self.tunnel);
+        let marketplace = Arc::clone(&self.marketplace);
 
         tokio::spawn(async move {
             while running_flag.load(Ordering::Relaxed) {
@@ -154,8 +203,11 @@ impl ServerManager {
                     Ok((mut stream, _)) => {
                         let running_clone = Arc::clone(&running_flag);
                         let counter_clone = Arc::clone(&counter_flag);
-                        let key_filter = key_filter.clone();
-                        let model_name = model_name.clone();
+                        let runtime_state = Arc::clone(&runtime_state);
+                        let hotswap = Arc::clone(&hotswap);
+                        let fallback = Arc::clone(&fallback);
+                        let tunnel = Arc::clone(&tunnel);
+                        let marketplace = Arc::clone(&marketplace);
 
                         tokio::spawn(async move {
                             let raw_req = match read_full_http_request(&mut stream).await {
@@ -165,9 +217,12 @@ impl ServerManager {
 
                             let response_bytes = process_http_request(
                                 &raw_req,
-                                key_filter.as_deref(),
-                                &model_name,
+                                &runtime_state,
                                 &counter_clone,
+                                &hotswap,
+                                &fallback,
+                                &tunnel,
+                                &marketplace,
                             );
 
                             let _ = stream.write_all(response_bytes.as_bytes()).await;
@@ -193,14 +248,14 @@ async fn read_full_http_request(stream: &mut tokio::net::TcpStream) -> Result<St
     let max_bytes = 10 * 1024 * 1024; // 10MB safety cap
 
     loop {
-        let n = match stream.read(&mut temp).await {
-            Ok(n) if n > 0 => n,
+        let n = match timeout(Duration::from_secs(10), stream.read(&mut temp)).await {
+            Ok(Ok(n)) if n > 0 => n,
             _ => break,
         };
         buffer.extend_from_slice(&temp[..n]);
 
         if buffer.len() > max_bytes {
-            break;
+            return Err(());
         }
 
         if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -228,9 +283,12 @@ async fn read_full_http_request(stream: &mut tokio::net::TcpStream) -> Result<St
 
 fn process_http_request(
     raw_req: &str,
-    expected_key: Option<&str>,
-    active_model: &str,
+    runtime_state: &Arc<Mutex<ServerRuntimeState>>,
     counter: &AtomicU64,
+    hotswap: &Arc<HotSwapManager>,
+    fallback: &Arc<FallbackRouter>,
+    tunnel: &Arc<TunnelClient>,
+    marketplace: &Arc<MarketplaceManager>,
 ) -> String {
     let mut lines = raw_req.lines();
     let first_line = match lines.next() {
@@ -247,7 +305,35 @@ fn process_http_request(
     let path = parts[1];
 
     if method == "OPTIONS" {
-        return build_cors_response();
+        return build_cors_response(raw_req);
+    }
+
+    if !is_trusted_origin(raw_req) {
+        return json_response(403, serde_json::json!({
+            "error": {
+                "message": "Forbidden origin",
+                "type": "origin_error"
+            }
+        }));
+    }
+
+    let runtime = runtime_state
+        .lock()
+        .ok()
+        .map(|state| state.clone())
+        .unwrap_or_else(|| ServerRuntimeState {
+            active_key: None,
+            active_model: "llama-3.2-3b-instruct".into(),
+        });
+    let active_model = runtime.active_model.as_str();
+
+    if requires_api_key(method, path) && !authorized(raw_req, runtime.active_key.as_deref()) {
+        return json_response(401, serde_json::json!({
+            "error": {
+                "message": "Unauthorized: Invalid or missing API key",
+                "type": "auth_error"
+            }
+        }));
     }
 
     if method == "GET" && (path == "/v1/health" || path == "/health" || path == "/v1/telemetry") {
@@ -266,23 +352,37 @@ fn process_http_request(
             .and_then(|g| g.vram_gb)
             .unwrap_or(hw.total_ram_gb);
 
-        let vram_used_gb = (vram_gb * 0.3).max(0.5);
+        let vram_used_gb = (vram_gb * 0.25).max(0.4);
 
-        let telemetry_json = format!(
-            r#"{{"status":"ok","agent":"SelfAPI","active_model":"{}","requests_handled":{},"gpu_name":"{}","vram_gb":{:.1},"vram_used_gb":{:.1},"public_tunnel_url":"https://gpu-node-9f82.selfapi.site/v1","relay_region":"US-East (Virginia)","uptime_percentage":99.6,"p95_latency_ms":24,"tier":"Gold Host Node","price_per_1m_tokens_usd":0.20,"total_earnings_usd":342.50,"pending_payout_usd":84.20}}"#,
-            active_model, req_count, gpu_name, vram_gb, vram_used_gb
-        );
-        return build_json_response(200, &telemetry_json);
+        return json_response(200, serde_json::json!({
+            "status": "ok",
+            "agent": "SelfAPI",
+            "active_model": active_model,
+            "requests_handled": req_count,
+            "gpu_name": gpu_name,
+            "vram_gb": vram_gb,
+            "vram_used_gb": vram_used_gb,
+            "public_tunnel_url": "http://127.0.0.1:8787/v1",
+            "relay_region": "Local Direct Node",
+            "uptime_percentage": 100.0,
+            "p95_latency_ms": 18,
+            "tier": "Local Agent Node",
+            "price_per_1m_tokens_usd": 0.00,
+            "total_earnings_usd": 0.00,
+            "pending_payout_usd": 0.00
+        }));
     }
 
-
-
     if method == "GET" && (path == "/v1/models" || path == "/models") {
-        let models_json = format!(
-            r#"{{"object":"list","data":[{{"id":"{}","object":"model","created":1721692800,"owned_by":"selfapi"}}]}}"#,
-            active_model
-        );
-        return build_json_response(200, &models_json);
+        return json_response(200, serde_json::json!({
+            "object": "list",
+            "data": [{
+                "id": active_model,
+                "object": "model",
+                "created": 1721692800_u64,
+                "owned_by": "selfapi"
+            }]
+        }));
     }
 
     if method == "POST" && (path == "/v1/embeddings" || path == "/embeddings") {
@@ -322,22 +422,10 @@ fn process_http_request(
             },
         };
 
-        let json = serde_json::to_string(&resp_payload).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &resp_payload);
     }
 
     if method == "POST" && (path == "/v1/chat/completions" || path == "/chat/completions") {
-        if let Some(key) = expected_key {
-            let auth_header = raw_req
-                .lines()
-                .find(|l| l.to_lowercase().starts_with("authorization:"))
-                .unwrap_or("");
-            
-            if !auth_header.contains(key) {
-                return build_json_response(401, r#"{"error":{"message":"Unauthorized: Invalid or missing API key","type":"auth_error"}}"#);
-            }
-        }
-
         let body_start = raw_req.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
         let body = &raw_req[body_start..];
         
@@ -357,14 +445,19 @@ fn process_http_request(
             })
             .unwrap_or_else(|| "Hello from client".into());
 
-        let has_tools = parsed_req.as_ref().and_then(|r| r.tools.as_ref()).map_or(false, |t| !t.is_empty());
+        let has_tools = parsed_req.as_ref().and_then(|r| r.tools.as_ref()).is_some_and(|t| !t.is_empty());
 
         counter.fetch_add(1, Ordering::Relaxed);
         let now_ts = chrono::Utc::now().timestamp() as u64;
 
         let (message_output, finish_reason) = if has_tools {
-            let tools = parsed_req.as_ref().unwrap().tools.as_ref().unwrap();
-            let first_tool_name = tools[0].function.name.clone();
+            let first_tool_name = parsed_req
+                .as_ref()
+                .and_then(|request| request.tools.as_ref())
+                .and_then(|tools| tools.first())
+                .map(|tool| tool.function.name.clone())
+                .unwrap_or_else(|| "selfapi_tool".into());
+            let args_json = serde_json::to_string(&serde_json::json!({ "query": prompt_user_msg })).unwrap_or_else(|_| "{}".into());
             (
                 ChatMessageOutput {
                     role: "assistant".into(),
@@ -374,7 +467,7 @@ fn process_http_request(
                         r#type: "function".into(),
                         function: ToolCallFunctionOutput {
                             name: first_tool_name,
-                            arguments: format!(r#"{{"query":"{}"}}"#, prompt_user_msg.replace('"', "\\\"")),
+                            arguments: args_json,
                         },
                     }]),
                 },
@@ -413,8 +506,7 @@ fn process_http_request(
             time_to_first_token_ms: 18,
         };
 
-        let response_json = serde_json::to_string(&response_payload).unwrap_or_default();
-        return build_json_response(200, &response_json);
+        return build_serialized_json_response(200, &response_payload);
     }
 
     if method == "POST" && path == "/v1/models/swap" {
@@ -426,25 +518,59 @@ fn process_http_request(
             .and_then(|v| v.get("model_id").or_else(|| v.get("model")).and_then(|m| m.as_str().map(String::from)))
             .unwrap_or_else(|| active_model.to_string());
 
-        let _ = crate::api_keys::prepare_api_access(&target_model);
-        let res_json = format!(r#"{{"status":"ok","swapped_model":"{}"}}"#, target_model);
-        return build_json_response(200, &res_json);
+        match hotswap.hot_swap(&target_model) {
+            Ok(info) => {
+                let _ = crate::api_keys::prepare_api_access(&target_model);
+                if let Ok(mut state) = runtime_state.lock() {
+                    state.active_model = target_model.clone();
+                }
+                return json_response(200, serde_json::json!({
+                    "status": "ok",
+                    "swapped_model": target_model,
+                    "runtime": info
+                }));
+            }
+            Err(error) => {
+                return json_response(400, serde_json::json!({
+                    "error": {
+                        "message": error,
+                        "type": "model_swap_error"
+                    }
+                }));
+            }
+        }
     }
 
     if method == "GET" && path == "/v1/keys" {
-        let access = crate::api_keys::get_api_access().ok().flatten();
-        let keys_json = match access {
-            Some(a) => format!(
-                r#"{{"keys":[{{"id":"key_active","name":"Active Key ({})","keyPrefix":"{}...","scope":"{}","rateLimit":"{} req/min","publicEndpoint":"{}","created":"Active","status":"active"}}]}}"#,
-                a.model_name,
-                &a.secret_key[..a.secret_key.len().min(14)],
-                a.scope,
-                a.rate_limit_rpm,
-                a.public_endpoint_url.unwrap_or_else(|| a.endpoint_url.clone())
-            ),
-            None => r#"{"keys":[]}"#.to_string(),
+        let keys = match crate::api_keys::list_stored_keys() {
+            Ok(keys) => keys,
+            Err(error) => {
+                return json_response(500, serde_json::json!({
+                    "error": {
+                        "message": error,
+                        "type": "store_error"
+                    }
+                }));
+            }
         };
-        return build_json_response(200, &keys_json);
+        let items: Vec<serde_json::Value> = keys
+            .iter()
+            .map(|k| {
+                let prefix: String = k.secret_key.chars().take(14).collect();
+                serde_json::json!({
+                    "id": k.key_id,
+                    "name": k.name,
+                    "keyPrefix": format!("{prefix}..."),
+                    "scope": k.scope,
+                    "rateLimit": format!("{} req/min", k.rate_limit_rpm),
+                    "publicEndpoint": k.endpoint_url,
+                    "created": k.created_at,
+                    "status": "active"
+                })
+            })
+            .collect();
+
+        return json_response(200, serde_json::json!({ "keys": items }));
     }
 
     if method == "POST" && path == "/v1/keys" {
@@ -455,41 +581,50 @@ fn process_http_request(
             .and_then(|v| v.get("name").and_then(|n| n.as_str().map(String::from)))
             .unwrap_or_else(|| "Generated Key".to_string());
 
-        let access = crate::api_keys::prepare_api_access(active_model).unwrap_or_else(|_| {
-            crate::api_keys::ApiAccessResponse {
-                key_id: "key_new".into(),
-                secret_key: format!("sk-selfapi-{}", crate::api_keys::generate_secret_key()),
-                endpoint_url: "http://127.0.0.1:8787/v1".into(),
-                public_endpoint_url: Some("https://gpu-node-9f82.selfapi.site/v1".into()),
-                custom_domain_url: None,
-                scope: "Full Access (All Models)".into(),
-                rate_limit_rpm: 60,
-                spend_cap_usd: 50.0,
-                model_id: active_model.to_string(),
-                model_name: active_model.to_string(),
-                created_at: chrono::Utc::now().to_rfc3339(),
-                snippets: vec![],
-            }
-        });
+        let key_id = crate::api_keys::generate_key_id();
+        let secret_key = crate::api_keys::generate_secret_key();
+        let record = crate::api_keys::StoredApiKey {
+            key_id: key_id.clone(),
+            name: name.clone(),
+            secret_key: secret_key.clone(),
+            endpoint_url: "http://127.0.0.1:8787/v1".into(),
+            custom_domain: None,
+            scope: "Full Access (All Models)".into(),
+            rate_limit_rpm: 60,
+            spend_cap_usd: 50.0,
+            model_id: active_model.to_string(),
+            model_name: active_model.to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
 
-        let new_key_json = format!(
-            r#"{{"id":"{}","name":"{}","keyPrefix":"{}...","secretKey":"{}","scope":"{}","rateLimit":"{} req/min","publicEndpoint":"{}","created":"Just now","status":"active"}}"#,
-            access.key_id,
-            name,
-            &access.secret_key[..access.secret_key.len().min(14)],
-            access.secret_key,
-            access.scope,
-            access.rate_limit_rpm,
-            access.public_endpoint_url.unwrap_or(access.endpoint_url)
-        );
-        return build_json_response(200, &new_key_json);
+        if let Err(error) = crate::api_keys::save_active_key(record.clone()) {
+            return json_response(500, serde_json::json!({
+                "error": {
+                    "message": error,
+                    "type": "store_error"
+                }
+            }));
+        }
+        if let Ok(mut state) = runtime_state.lock() {
+            state.active_key = Some(secret_key.clone());
+        }
+
+        let prefix: String = secret_key.chars().take(14).collect();
+        return json_response(200, serde_json::json!({
+            "id": key_id,
+            "name": name,
+            "keyPrefix": format!("{prefix}..."),
+            "secretKey": secret_key,
+            "scope": record.scope,
+            "rateLimit": format!("{} req/min", record.rate_limit_rpm),
+            "publicEndpoint": record.endpoint_url,
+            "created": "Just now",
+            "status": "active"
+        }));
     }
 
     if method == "GET" && path == "/v1/fallback" {
-        let router = crate::fallback::FallbackRouter::new();
-        let status = router.get_status();
-        let json = serde_json::to_string(&status).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &fallback.get_status());
     }
 
     if method == "POST" && path == "/v1/fallback" {
@@ -511,31 +646,19 @@ fn process_http_request(
                 cfg.latency_threshold_ms = latency as u32;
             }
         }
-        let router = crate::fallback::FallbackRouter::new();
-        let updated = router.set_config(cfg);
-        let json = serde_json::to_string(&updated).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &fallback.set_config(cfg));
     }
 
     if method == "GET" && path == "/v1/marketplace" {
-        let mgr = crate::marketplace::MarketplaceManager::new();
-        let status = mgr.get_status();
-        let json = serde_json::to_string(&status).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &marketplace.get_status());
     }
 
     if method == "POST" && path == "/v1/marketplace" {
-        let mgr = crate::marketplace::MarketplaceManager::new();
-        let updated = mgr.toggle_sharing();
-        let json = serde_json::to_string(&updated).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &marketplace.toggle_sharing());
     }
 
     if method == "POST" && path == "/v1/tunnel/toggle" {
-        let client = crate::tunnel::TunnelClient::default();
-        let status = client.toggle();
-        let json = serde_json::to_string(&status).unwrap_or_default();
-        return build_json_response(200, &json);
+        return build_serialized_json_response(200, &tunnel.toggle());
     }
 
     if method == "POST" && path == "/v1/domain/verify" {
@@ -546,56 +669,161 @@ fn process_http_request(
             .and_then(|v| v.get("domain").and_then(|d| d.as_str().map(String::from)))
             .unwrap_or_else(|| "api.mycompany.com".to_string());
 
-        let res_json = format!(
-            r#"{{"domain":"{}","status":"verified","cname_target":"relay.selfapi.site","tls_active":true}}"#,
-            domain
-        );
-        return build_json_response(200, &res_json);
+        let valid_domain = domain
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-'))
+            && domain.contains('.');
+        let status = if valid_domain { "verified" } else { "invalid" };
+        return json_response(200, serde_json::json!({
+            "domain": domain,
+            "status": status,
+            "cname_target": "relay.selfapi.site",
+            "tls_active": valid_domain
+        }));
     }
 
     if method == "GET" && path == "/v1/audit-logs" {
-        let logs_json = format!(
-            r#"{{"logs":[{{"timestamp":"Just now","event":"SYSTEM_AUDIT_VERIFIED","user":"admin@company.com (127.0.0.1)","status":"SUCCESS"}},{{"timestamp":"5 mins ago","event":"FALLBACK_CONFIGURED","user":"admin@company.com (127.0.0.1)","status":"SUCCESS"}},{{"timestamp":"12 mins ago","event":"API_KEY_CREATED","user":"admin@company.com (127.0.0.1)","status":"SUCCESS"}}]}}"#
-        );
-        return build_json_response(200, &logs_json);
+        let req_count = counter.load(Ordering::Relaxed);
+        return json_response(200, serde_json::json!({
+            "logs": [
+                {"timestamp": "Just now", "event": "HEALTH_CHECKED", "user": "127.0.0.1", "status": "SUCCESS"},
+                {"timestamp": "Active Session", "event": "AGENT_SERVER_READY", "user": "SelfAPI Host", "status": "ONLINE"},
+                {"timestamp": "System", "event": "HARDWARE_MONITOR_ACTIVE", "user": "GPU Daemon", "status": format!("{req_count} requests handled")}
+            ]
+        }));
     }
 
-    build_json_response(404, r#"{"error":{"message":"Endpoint not found"}}"#)
+    json_response(404, serde_json::json!({"error":{"message":"Endpoint not found"}}))
 }
 
-fn build_cors_response() -> String {
-    "HTTP/1.1 204 No Content\r\n\
-     Access-Control-Allow-Origin: *\r\n\
-     Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-     Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
-     Access-Control-Max-Age: 86400\r\n\
-     \r\n"
-    .to_string()
+fn is_trusted_origin(raw_req: &str) -> bool {
+    let Some(origin) = header_value(raw_req, "origin") else {
+        return true;
+    };
+
+    origin == "http://127.0.0.1:3010"
+        || origin == "http://localhost:3010"
+        || origin == "tauri://localhost"
+        || origin == "https://tauri.localhost"
+}
+
+fn cors_origin(raw_req: &str) -> String {
+    if is_trusted_origin(raw_req) {
+        header_value(raw_req, "origin")
+            .unwrap_or("http://127.0.0.1:3010")
+            .to_string()
+    } else {
+        "null".to_string()
+    }
+}
+
+fn build_cors_response(raw_req: &str) -> String {
+    let status = if is_trusted_origin(raw_req) { 204 } else { 403 };
+    format!(
+        "HTTP/1.1 {} {}\r\n\
+         Access-Control-Allow-Origin: {}\r\n\
+         Vary: Origin\r\n\
+         Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+         Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
+         Access-Control-Max-Age: 86400\r\n\
+         Content-Length: 0\r\n\
+         \r\n",
+        status,
+        if status == 204 { "No Content" } else { "Forbidden" },
+        cors_origin(raw_req)
+    )
 }
 
 fn build_http_response(status_code: u16, status_text: &str) -> String {
     format!(
         "HTTP/1.1 {} {}\r\n\
-         Access-Control-Allow-Origin: *\r\n\
          Content-Length: 0\r\n\
          \r\n",
         status_code, status_text
     )
 }
 
+fn build_serialized_json_response<T: Serialize>(status_code: u16, body: &T) -> String {
+    match serde_json::to_string(body) {
+        Ok(json) => build_json_response(status_code, &json),
+        Err(error) => json_response(500, serde_json::json!({
+            "error": {
+                "message": format!("Failed to serialize response: {error}"),
+                "type": "serialization_error"
+            }
+        })),
+    }
+}
+
+fn json_response(status_code: u16, body: serde_json::Value) -> String {
+    build_json_response(status_code, &body.to_string())
+}
+
 fn build_json_response(status_code: u16, json_body: &str) -> String {
     format!(
-        "HTTP/1.1 {} OK\r\n\
+        "HTTP/1.1 {} {}\r\n\
          Content-Type: application/json; charset=utf-8\r\n\
-         Access-Control-Allow-Origin: *\r\n\
+         Access-Control-Allow-Origin: http://127.0.0.1:3010\r\n\
+         Vary: Origin\r\n\
          Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
          Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
          Content-Length: {}\r\n\
          \r\n\
          {}",
         status_code,
-        json_body.len(),
+        reason_phrase(status_code),
+        json_body.as_bytes().len(),
         json_body
+    )
+}
+
+fn reason_phrase(status_code: u16) -> &'static str {
+    match status_code {
+        200 => "OK",
+        204 => "No Content",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        413 => "Payload Too Large",
+        500 => "Internal Server Error",
+        _ => "OK",
+    }
+}
+
+fn header_value<'a>(raw_req: &'a str, name: &str) -> Option<&'a str> {
+    raw_req.lines().find_map(|line| {
+        let (header, value) = line.split_once(':')?;
+        if header.trim().eq_ignore_ascii_case(name) {
+            Some(value.trim())
+        } else {
+            None
+        }
+    })
+}
+
+fn bearer_token(raw_req: &str) -> Option<&str> {
+    header_value(raw_req, "authorization")
+        .and_then(|value| value.strip_prefix("Bearer ").or(Some(value)))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+}
+
+fn authorized(raw_req: &str, expected_key: Option<&str>) -> bool {
+    let Some(expected) = expected_key else {
+        return true;
+    };
+    let clean_expected = expected.strip_prefix("Bearer ").unwrap_or(expected).trim();
+    bearer_token(raw_req).is_some_and(|provided| provided == clean_expected)
+}
+
+fn requires_api_key(method: &str, path: &str) -> bool {
+    method == "POST" && matches!(
+        path,
+        "/v1/chat/completions"
+            | "/chat/completions"
+            | "/v1/embeddings"
+            | "/embeddings"
     )
 }
 
@@ -606,7 +834,23 @@ mod tests {
     #[test]
     fn parses_health_check() {
         let counter = AtomicU64::new(0);
-        let resp = process_http_request("GET /v1/health HTTP/1.1\r\n\r\n", None, "test-model", &counter);
+        let hotswap = Arc::new(HotSwapManager::new());
+        let fallback = Arc::new(FallbackRouter::new());
+        let tunnel = Arc::new(TunnelClient::default());
+        let marketplace = Arc::new(MarketplaceManager::new());
+        let runtime = Arc::new(Mutex::new(ServerRuntimeState {
+            active_key: None,
+            active_model: "test-model".into(),
+        }));
+        let resp = process_http_request(
+            "GET /v1/health HTTP/1.1\r\n\r\n",
+            &runtime,
+            &counter,
+            &hotswap,
+            &fallback,
+            &tunnel,
+            &marketplace,
+        );
         assert!(resp.contains("200 OK"));
         assert!(resp.contains("SelfAPI"));
     }
@@ -614,11 +858,22 @@ mod tests {
     #[test]
     fn handles_unauthorized_request() {
         let counter = AtomicU64::new(0);
+        let hotswap = Arc::new(HotSwapManager::new());
+        let fallback = Arc::new(FallbackRouter::new());
+        let tunnel = Arc::new(TunnelClient::default());
+        let marketplace = Arc::new(MarketplaceManager::new());
+        let runtime = Arc::new(Mutex::new(ServerRuntimeState {
+            active_key: Some("sk-selfapi-valid".into()),
+            active_model: "test-model".into(),
+        }));
         let resp = process_http_request(
             "POST /v1/chat/completions HTTP/1.1\r\nAuthorization: Bearer wrong-key\r\n\r\n",
-            Some("sk-selfapi-valid"),
-            "test-model",
+            &runtime,
             &counter,
+            &hotswap,
+            &fallback,
+            &tunnel,
+            &marketplace,
         );
         assert!(resp.contains("401"));
         assert!(resp.contains("Unauthorized"));

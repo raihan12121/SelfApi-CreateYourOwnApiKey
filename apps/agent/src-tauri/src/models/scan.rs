@@ -51,7 +51,7 @@ pub async fn scan_system_models() -> ScanResult {
                             let clean_id = format!("ollama-{}", m.name.replace(':', "-"));
 
                             scanned.push(ScannedModel {
-                                id: clean_id,
+                                id: clean_id.clone(),
                                 name: format!("Ollama — {}", m.name),
                                 source: "Ollama API".into(),
                                 file_path: format!("ollama://{}", m.name),
@@ -81,6 +81,12 @@ pub async fn scan_system_models() -> ScanResult {
         }
     }
 
+    // Auto-register discovered scanned models into local manifest
+    for m in &scanned {
+        let p = PathBuf::from(&m.file_path);
+        let _ = register_installed_model(&m.id, &m.name, "Scanned", &m.name, &p);
+    }
+
     ScanResult {
         scanned_models: scanned,
         ollama_available: ollama_online,
@@ -89,12 +95,23 @@ pub async fn scan_system_models() -> ScanResult {
 }
 
 fn scan_dir_for_gguf(dir: &Path, results: &mut Vec<ScannedModel>) {
+    scan_dir_recursive(dir, results, 0);
+}
+
+fn scan_dir_recursive(dir: &Path, results: &mut Vec<ScannedModel>, depth: usize) {
+    if depth > 5 || dir.is_symlink() {
+        return;
+    }
+
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            if path.is_symlink() {
+                continue;
+            }
             if path.is_dir() {
-                scan_dir_for_gguf(&path, results);
-            } else if path.extension().map_or(false, |ext| ext == "gguf") {
+                scan_dir_recursive(&path, results, depth + 1);
+            } else if path.extension().is_some_and(|ext| ext == "gguf") {
                 if let Ok(meta) = entry.metadata() {
                     let filename = path.file_name().unwrap_or_default().to_string_lossy();
                     let clean_id = format!("local-{}", filename.to_lowercase().replace(' ', "-"));

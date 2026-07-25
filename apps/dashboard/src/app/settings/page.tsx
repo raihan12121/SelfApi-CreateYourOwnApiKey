@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { getApiEndpoint } from "@/lib/store";
 
 type AuditLogRow = {
   timestamp: string;
@@ -23,9 +24,10 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadData() {
       try {
+        const base = getApiEndpoint();
         const [, auditRes] = await Promise.all([
-          fetch("http://127.0.0.1:8787/v1/fallback"),
-          fetch("http://127.0.0.1:8787/v1/audit-logs"),
+          fetch(`${base}/v1/fallback`),
+          fetch(`${base}/v1/audit-logs`),
         ]);
         if (auditRes.ok) {
           const data = await auditRes.json();
@@ -42,7 +44,7 @@ export default function SettingsPage() {
     setRetention(value);
     setSavedToast(true);
     try {
-      await fetch("http://127.0.0.1:8787/v1/fallback", {
+      await fetch(`${getApiEndpoint()}/v1/fallback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: true, provider: "groq" }),
@@ -56,7 +58,7 @@ export default function SettingsPage() {
   const handleVerifyDns = async () => {
     setDnsStatus("verifying");
     try {
-      const res = await fetch("http://127.0.0.1:8787/v1/domain/verify", {
+      const res = await fetch(`${getApiEndpoint()}/v1/domain/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ domain: customDomain }),

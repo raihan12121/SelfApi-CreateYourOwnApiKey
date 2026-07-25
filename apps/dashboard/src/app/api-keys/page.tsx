@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { getApiEndpoint } from "@/lib/store";
 
 type ApiKeyRow = {
   id: string;
@@ -41,11 +42,12 @@ export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKeyRow[]>(initialKeys);
   const [showModal, setShowModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadKeys() {
       try {
-        const res = await fetch("http://127.0.0.1:8787/v1/keys");
+        const res = await fetch(`${getApiEndpoint()}/v1/keys`);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.keys) && data.keys.length > 0) {
@@ -64,7 +66,8 @@ export default function ApiKeysPage() {
     if (!newKeyName.trim()) return;
 
     try {
-      const res = await fetch("http://127.0.0.1:8787/v1/keys", {
+      setError(null);
+      const res = await fetch(`${getApiEndpoint()}/v1/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newKeyName }),
@@ -72,19 +75,13 @@ export default function ApiKeysPage() {
       if (res.ok) {
         const newKey: ApiKeyRow = await res.json();
         setKeys((prev) => [newKey, ...prev]);
+      } else {
+        setError("Failed to create API key. Make sure the desktop agent is running.");
+        return;
       }
     } catch {
-      const newKey: ApiKeyRow = {
-        id: `key_${Date.now()}`,
-        name: newKeyName,
-        keyPrefix: `sk-selfapi-${Math.random().toString(36).substring(2, 8)}...`,
-        scope: "Full Access (All Models)",
-        rateLimit: "60 req/min",
-        publicEndpoint: "https://gpu-node-9f82.selfapi.site/v1",
-        created: "Just now",
-        status: "active",
-      };
-      setKeys((prev) => [newKey, ...prev]);
+      setError("Failed to create API key. Make sure the desktop agent is running.");
+      return;
     }
     setNewKeyName("");
     setShowModal(false);
@@ -111,6 +108,12 @@ export default function ApiKeysPage() {
           </button>
         }
       />
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
+          {error}
+        </div>
+      )}
 
       {showModal && (
         <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">

@@ -28,13 +28,19 @@ pub fn read_store() -> Result<ApiKeyStore, String> {
         Err(e) => return Err(format!("Failed to read store file at {:?}: {}", path, e)),
     };
 
-    serde_json::from_str(&contents).or_else(|_| Ok(ApiKeyStore::default()))
+    serde_json::from_str(&contents).map_err(|e| format!("Failed to parse api-keys.json at {:?}: {}", path, e))
 }
 
 
 pub fn write_store(store: &ApiKeyStore) -> Result<(), String> {
     let contents = serde_json::to_string_pretty(store).map_err(|error| error.to_string())?;
-    fs::write(store_path()?, contents).map_err(|error| error.to_string())
+    let path = store_path()?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, contents).map_err(|error| error.to_string())?;
+    fs::rename(&temp_path, &path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        error.to_string()
+    })
 }
 
 pub fn local_endpoint_url(port: u16) -> String {
@@ -44,13 +50,27 @@ pub fn local_endpoint_url(port: u16) -> String {
 pub fn save_active_key(record: StoredApiKey) -> Result<ApiKeyStore, String> {
     let mut store = read_store()?;
     store.local_port = DEFAULT_LOCAL_PORT;
-    store.active_key = Some(record);
+    store.active_key = Some(record.clone());
+    
+    store.keys.retain(|k| k.key_id != record.key_id);
+    store.keys.push(record);
+
     write_store(&store)?;
     Ok(store)
 }
 
 pub fn get_stored_key() -> Result<Option<StoredApiKey>, String> {
     Ok(read_store()?.active_key)
+}
+
+pub fn list_stored_keys() -> Result<Vec<StoredApiKey>, String> {
+    let store = read_store()?;
+    if store.keys.is_empty() {
+        if let Some(active) = store.active_key {
+            return Ok(vec![active]);
+        }
+    }
+    Ok(store.keys)
 }
 
 #[cfg(test)]

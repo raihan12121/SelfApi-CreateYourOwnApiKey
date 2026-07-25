@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { escapeAttr, escapeHtml } from "./dom-safe";
 import type { ApiAccessResponse } from "./types";
 
 let currentAccess: ApiAccessResponse | null = null;
@@ -53,8 +54,8 @@ function renderApiAccess(access: ApiAccessResponse): void {
     tabsContainer.innerHTML = access.snippets
       .map(
         (s, idx) => `
-          <button type="button" class="tab-btn ${idx === activeSnippetIndex ? "tab-active" : ""}" data-snippet-idx="${idx}">
-            ${s.label}
+          <button type="button" class="tab-btn ${idx === activeSnippetIndex ? "tab-active" : ""}" data-snippet-idx="${escapeAttr(idx)}">
+            ${escapeHtml(s.label)}
           </button>
         `,
       )

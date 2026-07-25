@@ -12,7 +12,7 @@ pub struct HostCapacityConfig {
 impl Default for HostCapacityConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             price_per_1m_tokens_usd: 0.20,
             max_allocated_vram_gb: 8.0,
         }
@@ -50,24 +50,24 @@ impl MarketplaceManager {
     pub fn new() -> Self {
         Self {
             config: Mutex::new(HostCapacityConfig::default()),
-            sharing_active: AtomicBool::new(true),
+            sharing_active: AtomicBool::new(false),
         }
     }
 
     pub fn get_status(&self) -> MarketplaceHostStatus {
-        let mut cfg = self.config.lock().unwrap().clone();
+        let mut cfg = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
         cfg.enabled = self.sharing_active.load(Ordering::Relaxed);
 
         MarketplaceHostStatus {
             config: cfg,
             reputation: HostReputation {
-                uptime_percentage: 99.6,
-                p95_latency_ms: 38,
-                jobs_completed: 1420,
-                tier: "Gold Host".into(),
+                uptime_percentage: 100.0,
+                p95_latency_ms: 0,
+                jobs_completed: 0,
+                tier: "Community Node".into(),
             },
-            total_earned_usd: 342.50,
-            pending_payout_usd: 84.20,
+            total_earned_usd: 0.0,
+            pending_payout_usd: 0.0,
         }
     }
 
@@ -86,8 +86,8 @@ mod tests {
     fn marketplace_manager_returns_reputation_and_earnings() {
         let mgr = MarketplaceManager::new();
         let status = mgr.get_status();
-        assert!(status.config.enabled);
-        assert_eq!(status.reputation.tier, "Gold Host");
-        assert_eq!(status.total_earned_usd, 342.50);
+        assert!(!status.config.enabled);
+        assert_eq!(status.reputation.tier, "Community Node");
+        assert_eq!(status.total_earned_usd, 0.0);
     }
 }

@@ -41,7 +41,7 @@ pub fn list_installed_models() -> Result<Vec<InstalledModel>, String> {
 
     Ok(records
         .into_iter()
-        .filter(|record| Path::new(&record.file_path).exists())
+        .filter(|record| record.file_path.starts_with("ollama://") || Path::new(&record.file_path).exists())
         .map(|record| InstalledModel {
             model_id: record.model_id,
             model_name: record.model_name,
@@ -67,9 +67,13 @@ pub fn register_installed_model(
     filename: &str,
     file_path: &Path,
 ) -> Result<InstalledModel, String> {
-    let file_size_bytes = fs::metadata(file_path)
-        .map_err(|error| error.to_string())?
-        .len();
+    let file_size_bytes = if file_path.to_string_lossy().starts_with("ollama://") {
+        4_000_000_000
+    } else {
+        fs::metadata(file_path)
+            .map(|m| m.len())
+            .unwrap_or(0)
+    };
 
     let installed = InstalledModel {
         model_id: model_id.to_string(),

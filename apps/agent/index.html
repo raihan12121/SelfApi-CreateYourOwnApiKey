@@ -4,422 +4,470 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SelfAPI Agent</title>
+    <title>SelfAPI Agent — GPU AI Gateway</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
     <div class="app-shell">
-      <header class="app-header">
+      <!-- Left Sidebar Navigation -->
+      <aside class="app-sidebar">
         <div>
-          <h1 class="brand-title">SelfAPI</h1>
-          <p class="brand-tagline">Turn your GPU into your own AI API</p>
+          <div class="sidebar-brand">
+            <div class="sidebar-logo">⚡</div>
+            <div class="sidebar-brand-text">
+              <h1>SelfAPI</h1>
+              <p>Local GPU AI Gateway</p>
+            </div>
+          </div>
+
+          <nav class="sidebar-nav">
+            <div class="sidebar-nav-title">Wizard Steps</div>
+            <button class="sidebar-item sidebar-item-active" data-sidebar-step="1" type="button">
+              <span class="sidebar-item-icon">💻</span>
+              <span>1. Hardware Specs</span>
+            </button>
+            <button class="sidebar-item" data-sidebar-step="2" type="button">
+              <span class="sidebar-item-icon">🧠</span>
+              <span>2. Model Setup</span>
+            </button>
+            <button class="sidebar-item" data-sidebar-step="3" type="button">
+              <span class="sidebar-item-icon">🔑</span>
+              <span>3. API Credentials</span>
+            </button>
+            <button class="sidebar-item" data-sidebar-step="4" type="button">
+              <span class="sidebar-item-icon">⚡</span>
+              <span>4. Test Playground</span>
+            </button>
+            
+            <div class="sidebar-nav-title">Management</div>
+            <button class="sidebar-item" data-sidebar-step="5" type="button">
+              <span class="sidebar-item-icon">📊</span>
+              <span>Control Center</span>
+            </button>
+          </nav>
         </div>
-        <span id="scan-status" class="status-pill status-warning">Scanning hardware…</span>
+
+        <div class="sidebar-telemetry">
+          <div class="sidebar-telemetry-header">
+            <span>Agent Gateway</span>
+            <span>Port 8787</span>
+          </div>
+          <div class="sidebar-telemetry-status">
+            <div class="status-dot"></div>
+            <span>Ready for Inference</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Top Header Bar -->
+      <header class="app-header">
+        <div class="header-breadcrumbs">
+          <span id="step-label" class="step-label">Onboarding · Step 1 of 4</span>
+        </div>
+        <div class="header-actions">
+          <span id="scan-status" class="status-pill status-warning">Scanning hardware…</span>
+        </div>
       </header>
 
-      <p id="step-label" class="step-label">Onboarding · Step 1 of 4</p>
-
-      <section class="panel" data-step-panel="1">
-        <h2>Hardware detection</h2>
-        <p class="panel-copy">
-          SelfAPI scans your GPU, VRAM, and system memory to recommend models your machine can run.
-        </p>
-
-        <div id="hardware-loading" class="loading">Detecting GPUs and system specs…</div>
-        <div id="hardware-error" class="error hidden"></div>
-
-        <div id="hardware-content" class="hidden">
-          <div class="summary-box">
-            <p id="capability-summary"></p>
-          </div>
-
-          <div id="system-meta" class="system-meta"></div>
-          <div id="gpu-list" class="gpu-grid"></div>
-
-          <div class="actions">
-            <button id="hardware-continue-button" type="button" class="button-primary">
-              Continue to model setup
-            </button>
-            <button id="rescan-button" type="button" class="button-secondary">
-              Rescan hardware
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel hidden" data-step-panel="2">
-        <h2>Choose a model</h2>
-        <p class="panel-copy">
-          SelfAPI recommends a model sized to your hardware. Download with one click — quantization is pre-selected.
-        </p>
-
-        <div id="models-loading" class="loading">Loading model recommendations…</div>
-        <div id="models-error" class="error hidden"></div>
-
-        <div id="models-content" class="hidden">
-          <div class="summary-box" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <p id="model-library-summary"></p>
-            <div style="display: flex; gap: 8px;">
-              <button id="import-custom-gguf-btn" type="button" class="button-secondary" style="font-size: 0.82rem; padding: 6px 12px;">
-                📁 Import Custom .GGUF
-              </button>
-              <button id="scan-system-models-btn" type="button" class="button-secondary" style="font-size: 0.82rem; padding: 6px 12px;">
-                🔍 Scan System Models (Ollama / Local)
-              </button>
-            </div>
-          </div>
-
-          <div id="scanned-models-container" class="hidden" style="margin-bottom: 20px; border: 1px solid #3b82f6; border-radius: 12px; padding: 16px; background: rgba(59, 130, 246, 0.08);">
-            <h3 style="margin: 0 0 8px; font-size: 0.95rem; color: #93c5fd;">Pre-installed Local Models Detected</h3>
-            <div id="scanned-models-list" class="model-grid"></div>
-          </div>
-
-          <div id="model-list" class="model-grid"></div>
-
-          <div class="quant-panel">
-            <h3>Quantization</h3>
-            <div id="quantization-options" class="quant-options"></div>
-          </div>
-
-          <div id="download-error" class="error hidden" style="margin-bottom: 12px;"></div>
-          <div id="download-progress" class="download-progress hidden"></div>
-
-          <div class="actions">
-            <button id="download-button" type="button" class="button-primary">
-              Download selected model
-            </button>
-            <button id="models-continue-button" type="button" class="button-secondary" disabled>
-              Continue to API key
-            </button>
-            <button id="models-skip-button" type="button" class="button-secondary" style="border-color: #52525b; color: #a1a1aa;">
-              Skip / Maybe Later ➔
-            </button>
-            <button id="models-back-button" type="button" class="button-secondary">
-              Back
-            </button>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- Step 3: API Key & Integration -->
-      <section class="panel hidden" data-step-panel="3">
-        <h2>Your OpenAI-compatible API</h2>
-        <p class="panel-copy">
-          SelfAPI issued an API key and local endpoint for your selected model. Drop these credentials into any OpenAI-compatible app.
-        </p>
-
-        <div id="apikeys-loading" class="loading">Generating local API credentials…</div>
-        <div id="apikeys-error" class="error hidden"></div>
-
-        <div id="apikeys-content" class="hidden">
-          <div class="key-box">
-            <div class="key-box-row">
-              <div>
-                <label class="key-label">API Secret Key</label>
-                <div class="key-value-wrapper">
-                  <input id="api-secret-input" type="password" readonly class="key-input" />
-                  <button id="toggle-key-visibility" type="button" class="button-small">Show</button>
-                </div>
-              </div>
-              <button id="copy-key-button" type="button" class="button-secondary">Copy Key</button>
-            </div>
-            <div class="key-box-row" style="margin-top: 14px;">
-              <div>
-                <label class="key-label">Local Base Endpoint</label>
-                <input id="api-endpoint-input" type="text" readonly class="key-input" />
-              </div>
-              <button id="copy-endpoint-button" type="button" class="button-secondary">Copy Local</button>
-            </div>
-            <div class="key-box-row" style="margin-top: 14px;">
-              <div>
-                <label class="key-label">Public Tunnel URL (NAT Traversal)</label>
-                <input id="api-public-input" type="text" readonly class="key-input" value="https://gpu-node-9f82.selfapi.site/v1" />
-              </div>
-              <button id="copy-public-button" type="button" class="button-secondary">Copy Public</button>
-            </div>
-          </div>
-
-
-          <div class="snippet-section">
-            <div class="snippet-header">
-              <h3>Integration Code Snippets</h3>
-              <div id="snippet-tabs" class="snippet-tabs"></div>
-            </div>
-            <div class="code-wrapper">
-              <pre><code id="snippet-code"></code></pre>
-              <button id="copy-snippet-button" type="button" class="button-small copy-snippet-btn">Copy Snippet</button>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="apikeys-continue-button" type="button" class="button-primary">
-              Start local server & test
-            </button>
-            <button id="apikeys-skip-button" type="button" class="button-secondary" style="border-color: #52525b; color: #a1a1aa;">
-              Skip / Maybe Later ➔
-            </button>
-            <button id="apikeys-back-button" type="button" class="button-secondary">
-              Back
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Step 4: Local Server & Test Playground -->
-      <section class="panel hidden" data-step-panel="4">
-        <div class="panel-header-flex">
-          <h2>Local API Server & Test Playground</h2>
-          <span id="server-status-pill" class="status-pill status-warning">Starting server…</span>
-        </div>
-        <p class="panel-copy">
-          Your local agent is ready to serve inference requests directly from your GPU or CPU on port 8787.
-        </p>
-
-        <div class="server-info-card">
-          <div class="info-item">
-            <span class="info-label">Active Model</span>
-            <strong id="server-active-model">—</strong>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Endpoint URL</span>
-            <code id="server-endpoint-url">http://127.0.0.1:8787/v1</code>
-          </div>
-          <div class="info-item">
-            <span class="info-label">Requests Handled</span>
-            <strong id="server-req-count">0</strong>
-          </div>
-        </div>
-
-        <div class="playground-box">
-          <h3>Test Model Completion</h3>
-          <p class="playground-hint">
-            Type a prompt below to verify tensor execution and latency in real-time.
+      <!-- Main Display Stage -->
+      <main class="app-main">
+        <!-- Step 1: Hardware Specs -->
+        <section class="panel" data-step-panel="1">
+          <h2>Hardware Spec Matrix</h2>
+          <p class="panel-copy">
+            SelfAPI scans your GPU, VRAM footprint, and system RAM to automatically recommend optimized models for your machine.
           </p>
-          <div class="playground-form">
-            <textarea
-              id="playground-prompt-input"
-              rows="3"
-              class="playground-textarea"
-              placeholder="e.g. Write a python script to download a webpage..."
-            >Write a short 2-sentence poem about high performance AI GPUs.</textarea>
-            <button id="playground-send-button" type="button" class="button-primary">
-              Send Completion Request
-            </button>
-          </div>
 
-          <div id="playground-response-box" class="playground-response hidden">
-            <div class="response-meta">
-              <span id="response-status-badge" class="badge badge-success">200 OK</span>
-              <span id="response-latency" class="response-time">0 ms</span>
-            </div>
-            <div class="code-wrapper">
-              <pre><code id="playground-response-code"></code></pre>
-            </div>
-          </div>
-        </div>
+          <div id="hardware-loading" class="loading">Detecting GPUs and system specs…</div>
+          <div id="hardware-error" class="error hidden"></div>
 
-        <div class="actions">
-          <button id="playground-finish-button" type="button" class="button-primary">
-            Open App Dashboard ➔
-          </button>
-          <button id="playground-skip-button" type="button" class="button-secondary" style="border-color: #52525b; color: #a1a1aa;">
-            Skip / Maybe Later ➔
-          </button>
-          <button id="playground-back-button" type="button" class="button-secondary">
-            Back
-          </button>
-        </div>
-      </section>
-
-      <!-- Step 5: Native In-App Dashboard -->
-      <section id="dashboard-panel" class="panel hidden" data-step-panel="5" style="padding: 0; border: 1px solid #27272a; border-radius: 12px; background: #09090b; overflow: hidden;">
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #18181b; border-bottom: 1px solid #27272a;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <span style="font-weight: 700; font-size: 1rem; color: #fafafa;">SelfAPI Control Center</span>
-            <span id="dash-status-pill" class="status-pill status-success">● Agent Active</span>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button id="dashboard-back-onboarding" type="button" class="button-secondary" style="padding: 5px 12px; font-size: 0.8rem; border-color: #3f3f46;">
-              ⚙️ Setup Wizard
-            </button>
-            <button id="dashboard-reload-btn" type="button" class="button-secondary" style="padding: 5px 12px; font-size: 0.8rem; border-color: #3f3f46;">
-              🔄 Refresh Status
-            </button>
-          </div>
-        </div>
-
-        <nav style="display: flex; gap: 4px; padding: 10px 18px; background: #121215; border-bottom: 1px solid #27272a; flex-wrap: wrap;">
-          <button data-dash-tab="overview" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">📊 Overview</button>
-          <button data-dash-tab="models" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">🧠 Models</button>
-          <button data-dash-tab="apikeys" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">🔑 API Keys</button>
-          <button data-dash-tab="requests" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">📜 Requests</button>
-          <button data-dash-tab="machines" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">💻 Machines</button>
-          <button data-dash-tab="billing" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">💰 Billing</button>
-          <button data-dash-tab="settings" class="button-secondary" style="font-size: 0.82rem; padding: 6px 14px;">⚙️ Settings</button>
-        </nav>
-
-        <div style="padding: 20px; min-height: 550px; background: #09090b;">
-          <!-- View: Overview -->
-          <div data-dash-view="overview" class="space-y-4">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px;">
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 16px; border-radius: 10px;">
-                <span style="font-size: 0.75rem; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Active Local Model</span>
-                <h3 id="dash-active-model" style="font-size: 1.2rem; color: #f4f4f5; margin: 6px 0 2px;">Llama 3.2 3B Instruct</h3>
-                <span style="font-size: 0.78rem; color: #10b981;">Q4_K_M · Loaded in VRAM</span>
-              </div>
-
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 16px; border-radius: 10px;">
-                <span style="font-size: 0.75rem; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Requests Handled</span>
-                <h3 id="dash-req-count" style="font-size: 1.4rem; color: #f4f4f5; margin: 6px 0 2px;">0</h3>
-                <span style="font-size: 0.78rem; color: #60a5fa;">100% Success Rate</span>
-              </div>
-
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 16px; border-radius: 10px;">
-                <span style="font-size: 0.75rem; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Primary Hardware</span>
-                <h3 id="dash-gpu-name" style="font-size: 1.1rem; color: #f4f4f5; margin: 6px 0 2px;">NVIDIA GeForce RTX 4070</h3>
-                <span id="dash-vram" style="font-size: 0.78rem; color: #fbbf24;">12.0 GB Memory</span>
-              </div>
+          <div id="hardware-content" class="hidden">
+            <div class="summary-box">
+              <p id="capability-summary"></p>
             </div>
 
-            <div style="background: #18181b; border: 1px solid #27272a; padding: 18px; border-radius: 10px;">
-              <h3 style="margin: 0 0 10px; font-size: 1rem; color: #f4f4f5;">Local API Endpoint & Auth</h3>
-              <p style="margin: 0 0 14px; color: #a1a1aa; font-size: 0.85rem;">Drop these credentials into any OpenAI-compatible client, LangChain, or desktop application.</p>
-              <div style="display: flex; gap: 10px; align-items: center;">
-                <code style="background: #09090b; border: 1px solid #27272a; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; color: #60a5fa; flex: 1;">http://127.0.0.1:8787/v1</code>
-                <code style="background: #09090b; border: 1px solid #27272a; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; color: #34d399;">Authorization: Bearer sk-selfapi-active-key</code>
-              </div>
+            <div id="system-meta" class="system-meta"></div>
+            <div id="gpu-list" class="gpu-grid"></div>
+
+            <div class="actions">
+              <button id="hardware-continue-button" type="button" class="button-primary">
+                Continue to Model Setup ➔
+              </button>
+              <button id="rescan-button" type="button" class="button-secondary">
+                🔄 Rescan Hardware
+              </button>
             </div>
           </div>
+        </section>
 
-          <!-- View: Models -->
-          <div data-dash-view="models" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Model Catalog & Hot Swap</h3>
-            <div style="display: grid; gap: 12px;">
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 14px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <h4 style="margin: 0; color: #f4f4f5;">Llama 3.2 3B Instruct</h4>
-                  <p style="margin: 4px 0 0; color: #a1a1aa; font-size: 0.82rem;">Meta · 3.2B params · Fast general instruction following</p>
-                </div>
-                <button type="button" class="button-small dash-hotswap-btn" data-model-id="llama-3.2-3b-instruct">Active in VRAM ✓</button>
-              </div>
+        <!-- Step 2: Choose Model & Quantization -->
+        <section class="panel hidden" data-step-panel="2">
+          <h2>Choose a Model & Quantization</h2>
+          <p class="panel-copy">
+            Select a model recommended for your hardware footprint. Download with one click or import your pre-existing GGUF files.
+          </p>
 
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 14px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <h4 style="margin: 0; color: #f4f4f5;">Qwen 2.5 7B Coder</h4>
-                  <p style="margin: 4px 0 0; color: #a1a1aa; font-size: 0.82rem;">Alibaba · 7.6B params · Advanced coding assistant</p>
-                </div>
-                <button type="button" class="button-small dash-hotswap-btn" data-model-id="qwen-2.5-7b-instruct">Hot Swap Model ⚡</button>
-              </div>
+          <div id="models-loading" class="loading">Loading model recommendations…</div>
+          <div id="models-error" class="error hidden"></div>
 
-              <div style="background: #18181b; border: 1px solid #27272a; padding: 14px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <h4 style="margin: 0; color: #f4f4f5;">Mistral 7B Instruct v0.3</h4>
-                  <p style="margin: 4px 0 0; color: #a1a1aa; font-size: 0.82rem;">Mistral AI · 7.3B params · High quality reasoning</p>
-                </div>
-                <button type="button" class="button-small dash-hotswap-btn" data-model-id="mistral-7b-instruct-v0.3">Hot Swap Model ⚡</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- View: API Keys -->
-          <div data-dash-view="apikeys" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Local & Public API Keys</h3>
-            <form id="dash-create-key-form" style="display: flex; gap: 10px; margin-bottom: 16px;">
-              <input id="dash-key-name-input" type="text" placeholder="Key Label (e.g. Staging App)" style="flex: 1; background: #18181b; border: 1px solid #27272a; padding: 8px 12px; border-radius: 6px; color: #f4f4f5; font-size: 0.85rem;" />
-              <button type="submit" class="button-primary" style="font-size: 0.85rem; padding: 8px 16px;">Create Scoped Key</button>
-            </form>
-            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; overflow: hidden;">
-              <table style="width: 100%; text-align: left; font-size: 0.82rem; border-collapse: collapse;">
-                <thead style="background: #121215; color: #a1a1aa; border-bottom: 1px solid #27272a;">
-                  <tr>
-                    <th style="padding: 10px 14px;">Key Label</th>
-                    <th style="padding: 10px 14px;">Key Prefix</th>
-                    <th style="padding: 10px 14px;">Scope</th>
-                    <th style="padding: 10px 14px;">Status</th>
-                  </tr>
-                </thead>
-                <tbody style="color: #f4f4f5;">
-                  <tr style="border-bottom: 1px solid #27272a;">
-                    <td style="padding: 10px 14px;">Default Agent Key</td>
-                    <td style="padding: 10px 14px; font-family: monospace; color: #60a5fa;">sk-selfapi-9f82...</td>
-                    <td style="padding: 10px 14px;">Full Access (All Models)</td>
-                    <td style="padding: 10px 14px; color: #10b981;">Active</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- View: Requests -->
-          <div data-dash-view="requests" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Recent Completions & Telemetry Log</h3>
-            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; overflow: hidden;">
-              <table style="width: 100%; text-align: left; font-size: 0.82rem; border-collapse: collapse;">
-                <thead style="background: #121215; color: #a1a1aa; border-bottom: 1px solid #27272a;">
-                  <tr>
-                    <th style="padding: 10px 14px;">Request ID</th>
-                    <th style="padding: 10px 14px;">Model</th>
-                    <th style="padding: 10px 14px;">Latency</th>
-                    <th style="padding: 10px 14px;">Tokens</th>
-                    <th style="padding: 10px 14px;">Status</th>
-                  </tr>
-                </thead>
-                <tbody style="color: #f4f4f5;">
-                  <tr style="border-bottom: 1px solid #27272a;">
-                    <td style="padding: 10px 14px; font-family: monospace; color: #a1a1aa;">req_9f821a</td>
-                    <td style="padding: 10px 14px;">Llama 3.2 3B Instruct</td>
-                    <td style="padding: 10px 14px; color: #34d399;">18 ms</td>
-                    <td style="padding: 10px 14px;">33 tokens</td>
-                    <td style="padding: 10px 14px; color: #10b981;">200 OK</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- View: Machines -->
-          <div data-dash-view="machines" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Connected GPU Workstations</h3>
-            <div style="background: #18181b; border: 1px solid #27272a; padding: 18px; border-radius: 10px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h4 style="margin: 0; color: #f4f4f5;">Desktop Host Node (Primary)</h4>
-                <span class="badge badge-success">Online (24ms NAT)</span>
-              </div>
-              <p style="margin: 0; color: #a1a1aa; font-size: 0.85rem;">Public Tunnel Endpoint: <code>https://gpu-node-9f82.selfapi.site/v1</code></p>
-            </div>
-          </div>
-
-          <!-- View: Billing -->
-          <div data-dash-view="billing" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Monetization & Idle VRAM Sharing</h3>
-            <div id="dash-rate-toast" class="hidden" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #34d399; padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 14px;">
-              ✓ Compute rate & payout preferences updated.
-            </div>
-            <form id="dash-rate-form" style="background: #18181b; border: 1px solid #27272a; padding: 18px; border-radius: 10px;">
-              <label style="display: block; color: #a1a1aa; font-size: 0.82rem; margin-bottom: 6px;">Compute Rate ($ / 1M Tokens)</label>
+          <div id="models-content" class="hidden">
+            <div class="summary-box" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <p id="model-library-summary" style="margin: 0;"></p>
               <div style="display: flex; gap: 10px;">
-                <input type="text" value="0.20" style="background: #09090b; border: 1px solid #27272a; padding: 8px 12px; border-radius: 6px; color: #f4f4f5; font-size: 0.85rem; width: 140px;" />
-                <button type="submit" class="button-primary" style="font-size: 0.85rem; padding: 8px 16px;">Save Compute Rate</button>
+                <button id="import-custom-gguf-btn" type="button" class="button-secondary" style="font-size: 0.84rem; padding: 8px 14px;">
+                  📁 Import Custom .GGUF
+                </button>
+                <button id="scan-system-models-btn" type="button" class="button-secondary" style="font-size: 0.84rem; padding: 8px 14px;">
+                  🔍 Scan System Models (Ollama / Local)
+                </button>
               </div>
-            </form>
+            </div>
+
+            <div id="installed-models-section" class="summary-box" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.3); margin-bottom: 24px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+                <div>
+                  <h3 style="margin: 0 0 4px; font-family: var(--font-heading); font-size: 1.05rem; color: #6ee7b7;">⚡ Choose From Downloaded Local Models</h3>
+                  <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Select any pre-installed .GGUF or Ollama model to use for instant local inference.</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                  <select id="local-installed-model-select" class="key-input" style="width: auto; min-width: 260px; color: var(--accent-emerald); background: #030712;">
+                    <option value="">Loading installed models…</option>
+                  </select>
+                  <button id="activate-local-model-btn" type="button" class="button-primary" style="font-size: 0.85rem; padding: 10px 16px; background: #10b981; color: #09090b;">
+                    Set Active Model ✓
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div id="scanned-models-container" class="hidden" style="margin-bottom: 24px; border: 1px solid var(--accent-blue); border-radius: 16px; padding: 20px; background: rgba(59, 130, 246, 0.08);">
+              <h3 style="margin: 0 0 12px; font-size: 1.05rem; color: #93c5fd;">Pre-installed Local Models Detected</h3>
+              <div id="scanned-models-list" class="model-grid"></div>
+            </div>
+
+            <div id="model-list" class="model-grid"></div>
+
+            <div class="quant-panel">
+              <h3>Quantization Level</h3>
+              <div id="quantization-options" class="quant-options"></div>
+            </div>
+
+            <div id="download-error" class="error hidden" style="margin-bottom: 16px;"></div>
+            <div id="download-progress" class="download-progress hidden"></div>
+
+            <div class="actions">
+              <button id="download-button" type="button" class="button-primary">
+                ⬇️ Download Selected Model
+              </button>
+              <button id="models-continue-button" type="button" class="button-secondary" disabled>
+                Continue to API Key ➔
+              </button>
+              <button id="models-skip-button" type="button" class="button-secondary" style="border-color: rgba(255, 255, 255, 0.15); color: var(--text-muted);">
+                Skip / Maybe Later ➔
+              </button>
+              <button id="models-back-button" type="button" class="button-secondary">
+                ⬅️ Back
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Step 3: API Key & Credentials -->
+        <section class="panel hidden" data-step-panel="3">
+          <h2>OpenAI-Compatible API Credentials</h2>
+          <p class="panel-copy">
+            SelfAPI generated a local API key and endpoint for your active model. Insert these credentials into any OpenAI SDK, Open WebUI, or LangChain project.
+          </p>
+
+          <div id="apikeys-loading" class="loading">Generating local API credentials…</div>
+          <div id="apikeys-error" class="error hidden"></div>
+
+          <div id="apikeys-content" class="hidden">
+            <div class="key-box">
+              <div class="key-box-row">
+                <div style="flex: 1;">
+                  <label class="key-label">API Secret Key</label>
+                  <div class="key-value-wrapper">
+                    <input id="api-secret-input" type="password" readonly class="key-input" />
+                    <button id="toggle-key-visibility" type="button" class="button-small">Show</button>
+                  </div>
+                </div>
+                <button id="copy-key-button" type="button" class="button-secondary">Copy Secret Key</button>
+              </div>
+
+              <div class="key-box-row" style="margin-top: 18px;">
+                <div style="flex: 1;">
+                  <label class="key-label">Local Base Endpoint</label>
+                  <input id="api-endpoint-input" type="text" readonly class="key-input" />
+                </div>
+                <button id="copy-endpoint-button" type="button" class="button-secondary">Copy Local URL</button>
+              </div>
+
+              <div class="key-box-row" style="margin-top: 18px;">
+                <div style="flex: 1;">
+                  <label class="key-label">Public Tunnel URL (NAT Traversal)</label>
+                  <input id="api-public-input" type="text" readonly class="key-input" value="https://gpu-node-9f82.selfapi.site/v1" />
+                </div>
+                <button id="copy-public-button" type="button" class="button-secondary">Copy Public URL</button>
+              </div>
+            </div>
+
+            <div class="snippet-section">
+              <div class="snippet-header">
+                <h3>Integration Code Snippets</h3>
+                <div id="snippet-tabs" class="snippet-tabs"></div>
+              </div>
+              <div class="code-wrapper">
+                <pre><code id="snippet-code"></code></pre>
+                <button id="copy-snippet-button" type="button" class="button-small copy-snippet-btn">Copy Snippet</button>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="apikeys-continue-button" type="button" class="button-primary">
+                Start Local Server & Test Playground ➔
+              </button>
+              <button id="apikeys-skip-button" type="button" class="button-secondary" style="border-color: rgba(255, 255, 255, 0.15); color: var(--text-muted);">
+                Skip / Maybe Later ➔
+              </button>
+              <button id="apikeys-back-button" type="button" class="button-secondary">
+                ⬅️ Back
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Step 4: Local Server & Test Playground -->
+        <section class="panel hidden" data-step-panel="4">
+          <div class="panel-header-flex">
+            <h2>Local API Server & Test Playground</h2>
+            <span id="server-status-pill" class="status-pill status-warning">Starting server…</span>
+          </div>
+          <p class="panel-copy">
+            Your local GPU agent is listening for OpenAI-compatible chat completion requests on port 8787.
+          </p>
+
+          <div class="server-info-card">
+            <div class="info-item">
+              <span class="info-label">Active Model</span>
+              <strong id="server-active-model" style="color: var(--accent-cyan);">—</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Endpoint URL</span>
+              <code id="server-endpoint-url" style="color: var(--accent-indigo);">http://127.0.0.1:8787/v1</code>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Requests Handled</span>
+              <strong id="server-req-count" style="color: var(--accent-emerald);">0</strong>
+            </div>
           </div>
 
-          <!-- View: Settings -->
-          <div data-dash-view="settings" class="hidden">
-            <h3 style="color: #f4f4f5; margin: 0 0 12px;">Gateway & Security Controls</h3>
-            <div style="background: #18181b; border: 1px solid #27272a; padding: 18px; border-radius: 10px; margin-bottom: 16px;">
-              <h4 style="margin: 0 0 8px; color: #f4f4f5;">Custom Domain Binding</h4>
-              <div style="display: flex; gap: 10px;">
-                <input type="text" value="api.mycompany.com" style="flex: 1; background: #09090b; border: 1px solid #27272a; padding: 8px 12px; border-radius: 6px; color: #f4f4f5; font-size: 0.85rem;" />
-                <button id="dash-verify-dns-btn" type="button" class="button-primary" style="font-size: 0.85rem; padding: 8px 16px;">Verify CNAME & TLS</button>
+          <div class="playground-box">
+            <h3>Test Model Completion</h3>
+            <p class="playground-hint">
+              Send a test prompt below to verify local execution and inference latency in real-time.
+            </p>
+            <div class="playground-form">
+              <textarea
+                id="playground-prompt-input"
+                rows="3"
+                class="playground-textarea"
+                placeholder="e.g. Write a python script to download a webpage..."
+              >Write a short 2-sentence poem about high performance AI GPUs.</textarea>
+              <button id="playground-send-button" type="button" class="button-primary">
+                ⚡ Send Completion Request
+              </button>
+            </div>
+
+            <div id="playground-response-box" class="playground-response hidden">
+              <div class="response-meta">
+                <span id="response-status-badge" class="badge badge-success">200 OK</span>
+                <span id="response-latency" class="response-time">0 ms</span>
+              </div>
+              <div class="code-wrapper">
+                <pre><code id="playground-response-code"></code></pre>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+
+          <div class="actions">
+            <button id="playground-finish-button" type="button" class="button-primary">
+              Open App Dashboard ➔
+            </button>
+            <button id="playground-skip-button" type="button" class="button-secondary" style="border-color: rgba(255, 255, 255, 0.15); color: var(--text-muted);">
+              Skip / Maybe Later ➔
+            </button>
+            <button id="playground-back-button" type="button" class="button-secondary">
+              ⬅️ Back
+            </button>
+          </div>
+        </section>
+
+        <!-- Step 5: Native Control Dashboard -->
+        <section id="dashboard-panel" class="panel hidden" data-step-panel="5" style="padding: 0; overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border-color);">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="font-family: var(--font-heading); font-weight: 800; font-size: 1.15rem; color: #ffffff;">SelfAPI Control Center</span>
+              <span id="dash-status-pill" class="status-pill status-success">● Agent Active</span>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button id="dashboard-back-onboarding" type="button" class="button-secondary" style="padding: 8px 14px; font-size: 0.84rem;">
+                ⚙️ Setup Wizard
+              </button>
+              <button id="dashboard-reload-btn" type="button" class="button-secondary" style="padding: 8px 14px; font-size: 0.84rem;">
+                🔄 Refresh Status
+              </button>
+            </div>
+          </div>
+
+          <nav style="display: flex; gap: 8px; padding: 12px 24px; background: rgba(10, 15, 30, 0.9); border-bottom: 1px solid var(--border-color); flex-wrap: wrap;">
+            <button data-dash-tab="overview" class="nav-tab nav-tab-active">📊 Overview</button>
+            <button data-dash-tab="models" class="nav-tab">🧠 Models</button>
+            <button data-dash-tab="apikeys" class="nav-tab">🔑 API Keys</button>
+            <button data-dash-tab="requests" class="nav-tab">📜 Requests</button>
+            <button data-dash-tab="machines" class="nav-tab">💻 Machines</button>
+            <button data-dash-tab="billing" class="nav-tab">💰 Billing</button>
+            <button data-dash-tab="settings" class="nav-tab">⚙️ Settings</button>
+          </nav>
+
+          <div style="padding: 28px; min-height: 600px; background: var(--bg-dark);">
+            <!-- View: Overview -->
+            <div data-dash-view="overview" class="space-y-4">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-bottom: 24px;">
+                <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 20px; border-radius: 14px;">
+                  <span style="font-size: 0.75rem; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Active Local Model</span>
+                  <h3 id="dash-active-model" style="font-family: var(--font-heading); font-size: 1.3rem; color: #ffffff; margin: 8px 0 4px;">Llama 3.2 3B Instruct</h3>
+                  <span style="font-size: 0.82rem; color: var(--accent-emerald); font-weight: 600;">Q4_K_M · Loaded in VRAM</span>
+                </div>
+
+                <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 20px; border-radius: 14px;">
+                  <span style="font-size: 0.75rem; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Requests Handled</span>
+                  <h3 id="dash-req-count" style="font-family: var(--font-heading); font-size: 1.5rem; color: #ffffff; margin: 8px 0 4px;">0</h3>
+                  <span style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 600;">100% Success Rate</span>
+                </div>
+
+                <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 20px; border-radius: 14px;">
+                  <span style="font-size: 0.75rem; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Primary Hardware</span>
+                  <h3 id="dash-gpu-name" style="font-family: var(--font-heading); font-size: 1.2rem; color: #ffffff; margin: 8px 0 4px;">NVIDIA GeForce RTX 4070</h3>
+                  <span id="dash-vram" style="font-size: 0.82rem; color: var(--accent-amber); font-weight: 600;">12.0 GB Memory</span>
+                </div>
+              </div>
+
+              <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 22px; border-radius: 14px;">
+                <h3 style="font-family: var(--font-heading); margin: 0 0 10px; font-size: 1.1rem; color: #ffffff;">Local API Endpoint & Auth</h3>
+                <p style="margin: 0 0 16px; color: var(--text-muted); font-size: 0.9rem;">Drop these credentials into any OpenAI-compatible client, LangChain, or desktop application.</p>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                  <code style="background: #030712; border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; color: var(--accent-cyan); flex: 1;">http://127.0.0.1:8787/v1</code>
+                  <code style="background: #030712; border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; color: var(--accent-emerald);">Authorization: Bearer sk-selfapi-active-key</code>
+                </div>
+              </div>
+            </div>
+
+            <!-- View: Models -->
+            <div data-dash-view="models" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Model Catalog & Hot Swap</h3>
+              <div id="dash-installed-models-list" style="display: grid; gap: 14px;">
+                <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 18px 22px; border-radius: 14px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <h4 style="margin: 0; color: #ffffff; font-size: 1.05rem;">Llama 3.2 3B Instruct</h4>
+                    <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.88rem;">Meta · 3.2B params · Fast general instruction following</p>
+                  </div>
+                  <button type="button" class="button-small dash-hotswap-btn" data-model-id="llama-3.2-3b-instruct">Active in VRAM ✓</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- View: API Keys -->
+            <div data-dash-view="apikeys" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Local & Public API Keys</h3>
+              <form id="dash-create-key-form" style="display: flex; gap: 12px; margin-bottom: 20px;">
+                <input id="dash-key-name-input" type="text" placeholder="Key Label (e.g. Staging App)" style="flex: 1; background: #030712; border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 10px; color: #ffffff; font-size: 0.9rem;" />
+                <button type="submit" class="button-primary" style="font-size: 0.88rem; padding: 10px 18px;">Create Scoped Key</button>
+              </form>
+              <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden;">
+                <table style="width: 100%; text-align: left; font-size: 0.88rem; border-collapse: collapse;">
+                  <thead style="background: rgba(0, 0, 0, 0.3); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                    <tr>
+                      <th style="padding: 12px 16px;">Key Label</th>
+                      <th style="padding: 12px 16px;">Key Prefix</th>
+                      <th style="padding: 12px 16px;">Scope</th>
+                      <th style="padding: 12px 16px;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dash-keys-tbody" style="color: #ffffff;">
+                    <tr>
+                      <td colspan="4" style="padding: 16px; text-align: center; color: var(--text-muted);">No API keys generated yet. Complete step 3 or create one above.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- View: Requests -->
+            <div data-dash-view="requests" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Recent Completions & Telemetry Log</h3>
+              <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden;">
+                <table style="width: 100%; text-align: left; font-size: 0.88rem; border-collapse: collapse;">
+                  <thead style="background: rgba(0, 0, 0, 0.3); color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                    <tr>
+                      <th style="padding: 12px 16px;">Request ID</th>
+                      <th style="padding: 12px 16px;">Model</th>
+                      <th style="padding: 12px 16px;">Latency</th>
+                      <th style="padding: 12px 16px;">Tokens</th>
+                      <th style="padding: 12px 16px;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dash-requests-tbody" style="color: #ffffff;">
+                    <tr>
+                      <td colspan="5" style="padding: 16px; text-align: center; color: var(--text-muted);">No completion requests recorded yet. Send a test prompt in Playground (Step 4) to record requests.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- View: Machines -->
+            <div data-dash-view="machines" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Connected GPU Workstations</h3>
+              <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 22px; border-radius: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                  <h4 style="margin: 0; color: #ffffff; font-size: 1.1rem;">Desktop Host Node (Primary)</h4>
+                  <span class="badge badge-success">Online (24ms NAT)</span>
+                </div>
+                <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">Public Tunnel Endpoint: <code style="color: var(--accent-cyan);">https://gpu-node-9f82.selfapi.site/v1</code></p>
+              </div>
+            </div>
+
+            <!-- View: Billing -->
+            <div data-dash-view="billing" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Monetization & Idle VRAM Sharing</h3>
+              <div id="dash-rate-toast" class="hidden" style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); color: var(--accent-emerald); padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; margin-bottom: 16px;">
+                ✓ Compute rate & payout preferences updated.
+              </div>
+              <form id="dash-rate-form" style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 22px; border-radius: 14px;">
+                <label style="display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px;">Compute Rate ($ / 1M Tokens)</label>
+                <div style="display: flex; gap: 12px;">
+                  <input type="text" value="0.20" style="background: #030712; border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 10px; color: #ffffff; font-size: 0.9rem; width: 160px;" />
+                  <button type="submit" class="button-primary" style="font-size: 0.88rem; padding: 10px 18px;">Save Compute Rate</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- View: Settings -->
+            <div data-dash-view="settings" class="hidden">
+              <h3 style="font-family: var(--font-heading); color: #ffffff; margin: 0 0 16px;">Gateway & Security Controls</h3>
+              <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); padding: 22px; border-radius: 14px; margin-bottom: 18px;">
+                <h4 style="margin: 0 0 10px; color: #ffffff; font-size: 1.05rem;">Custom Domain Binding</h4>
+                <div style="display: flex; gap: 12px;">
+                  <input type="text" value="api.mycompany.com" style="flex: 1; background: #030712; border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 10px; color: #ffffff; font-size: 0.9rem;" />
+                  <button id="dash-verify-dns-btn" type="button" class="button-primary" style="font-size: 0.88rem; padding: 10px 18px;">Verify CNAME & TLS</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
   </body>
 </html>
-

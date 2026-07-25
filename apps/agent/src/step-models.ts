@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { escapeAttr, escapeHtml } from "./dom-safe";
 import type {
   DownloadProgress,
   InstalledModel,
@@ -76,11 +77,11 @@ function renderQuantOptions(model: ModelRecommendation): string {
           <input
             type="radio"
             name="quantization"
-            value="${quant.id}"
+            value="${escapeAttr(quant.id)}"
             ${checked ? "checked" : ""}
           />
           <span>
-            <strong>${quant.label}</strong>
+            <strong>${escapeHtml(quant.label)}</strong>
             <small>${quant.min_vram_gb.toFixed(1)} GB VRAM · ${formatBytes(quant.file_size_bytes)}</small>
           </span>
         </label>
@@ -96,12 +97,12 @@ function renderModelCard(model: ModelRecommendation): string {
   return `
     <div
       class="model-card ${selected ? "model-card-selected" : ""} ${disabled ? "model-card-disabled" : ""}"
-      data-model-id="${model.model.id}"
+      data-model-id="${escapeAttr(model.model.id)}"
     >
       <div class="model-card-header">
         <div>
-          <p class="model-family">${model.model.family}</p>
-          <h3>${model.model.name}</h3>
+          <p class="model-family">${escapeHtml(model.model.family)}</p>
+          <h3>${escapeHtml(model.model.name)}</h3>
         </div>
         <div class="model-card-badges">
           ${model.is_default ? '<span class="badge badge-accent">Best match</span>' : ""}
@@ -109,12 +110,12 @@ function renderModelCard(model: ModelRecommendation): string {
           ${model.installed ? '<span class="badge badge-success">Installed</span>' : ""}
         </div>
       </div>
-      <p class="model-description">${model.model.description}</p>
+      <p class="model-description">${escapeHtml(model.model.description)}</p>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-        <p class="model-meta">${model.model.parameter_count_b.toFixed(1)}B params · ${model.recommended_quantization.label}</p>
+        <p class="model-meta">${model.model.parameter_count_b.toFixed(1)}B params · ${escapeHtml(model.recommended_quantization.label)}</p>
         ${
           model.installed
-            ? `<button type="button" class="button-small hotswap-btn" data-hotswap-id="${model.model.id}">Make Active (Hot Swap)</button>`
+            ? `<button type="button" class="button-small hotswap-btn" data-hotswap-id="${escapeAttr(model.model.id)}">Make Active (Hot Swap)</button>`
             : ""
         }
       </div>
@@ -150,7 +151,7 @@ function updateDownloadUi(): void {
   if (model.installed || download?.status === "completed") {
     progressEl.classList.remove("hidden");
     progressEl.innerHTML = `
-      <div class="progress-copy">Model ready at <code>${download?.file_path ?? "local storage"}</code></div>
+      <div class="progress-copy">Model ready at <code>${escapeHtml(download?.file_path ?? "local storage")}</code></div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width: 100%"></div></div>
     `;
     continueButton.disabled = false;
@@ -162,7 +163,7 @@ function updateDownloadUi(): void {
     progressEl.classList.remove("hidden");
     const percent = download.progress_percent ?? 0;
     progressEl.innerHTML = `
-      <div class="progress-copy">Downloading ${model.model.name} · ${formatBytes(download.bytes_downloaded)}${
+      <div class="progress-copy">Downloading ${escapeHtml(model.model.name)} · ${formatBytes(download.bytes_downloaded)}${
         download.total_bytes ? ` / ${formatBytes(download.total_bytes)}` : ""
       }</div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width: ${percent}%"></div></div>
@@ -217,6 +218,35 @@ async function ensureProgressListener(): Promise<void> {
   progressListenerReady = true;
 }
 
+function populateLocalModelSelect(installed: InstalledModel[], scanned: Array<{ id: string; name: string; file_path: string }>): void {
+  const selectEl = document.querySelector<HTMLSelectElement>("#local-installed-model-select");
+  if (!selectEl) return;
+
+  const combined = new Map<string, { id: string; name: string }>();
+
+  installed.forEach((m) => {
+      combined.set(m.model_id, { id: m.model_id, name: `${m.model_name} (${(m.file_size_bytes / 1073741824).toFixed(1)} GB)` });
+  });
+
+  scanned.forEach((s) => {
+    if (!combined.has(s.id)) {
+      combined.set(s.id, { id: s.id, name: s.name });
+    }
+  });
+
+  if (combined.size === 0) {
+    selectEl.innerHTML = `<option value="">No downloaded local models found yet</option>`;
+    const btn = document.querySelector<HTMLButtonElement>("#activate-local-model-btn");
+    if (btn) btn.disabled = true;
+  } else {
+    const btn = document.querySelector<HTMLButtonElement>("#activate-local-model-btn");
+    if (btn) btn.disabled = false;
+    selectEl.innerHTML = Array.from(combined.values()).map((m) => `
+      <option value="${escapeAttr(m.id)}" ${state.selectedModelId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>
+    `).join("");
+  }
+}
+
 export async function loadModelLibrary(): Promise<ModelLibraryResponse> {
   const loadingEl = document.querySelector<HTMLElement>("#models-loading");
   const contentEl = document.querySelector<HTMLElement>("#models-content");
@@ -233,6 +263,15 @@ export async function loadModelLibrary(): Promise<ModelLibraryResponse> {
       invoke<ModelLibraryResponse>("get_model_library"),
       invoke<InstalledModel[]>("get_installed_models"),
     ]);
+
+    // Auto-scan system models in background on Step 2 load
+    void invoke<{ scanned_models: Array<{ id: string; name: string; file_path: string }>; ollama_available: boolean }>("cmd_scan_system_models").then((scanned) => {
+      populateLocalModelSelect(installed, scanned?.scanned_models ?? []);
+    }).catch(() => {
+      populateLocalModelSelect(installed, []);
+    });
+
+    populateLocalModelSelect(installed, []);
 
     const installedById = new Map(
       installed.map((entry) => [entry.model_id, entry]),
@@ -286,6 +325,52 @@ export async function loadModelLibrary(): Promise<ModelLibraryResponse> {
 }
 
 export function bindModelStepEvents(onContinue: () => void): void {
+  document.querySelector("#activate-local-model-btn")?.addEventListener("click", async () => {
+    const selectEl = document.querySelector<HTMLSelectElement>("#local-installed-model-select");
+    const activeBtn = document.querySelector<HTMLButtonElement>("#activate-local-model-btn");
+    const modelId = selectEl?.value;
+    if (!modelId) return;
+
+    if (activeBtn) {
+      activeBtn.disabled = true;
+      activeBtn.textContent = "Activating Model...";
+    }
+
+    try {
+      await invoke("cmd_hot_swap_model", { model_id: modelId });
+      state.selectedModelId = modelId;
+      state.download = {
+        model_id: modelId,
+        quantization_id: "Q4_K_M",
+        status: "completed",
+        bytes_downloaded: 4000000000,
+        total_bytes: 4000000000,
+        progress_percent: 100,
+        file_path: "local_vram",
+        error: null,
+      };
+
+      if (activeBtn) {
+        activeBtn.disabled = false;
+        activeBtn.textContent = "✓ Active in VRAM";
+      }
+
+      const continueButton = document.querySelector<HTMLButtonElement>("#models-continue-button");
+      if (continueButton) continueButton.disabled = false;
+
+      renderModelLibrary();
+
+      setTimeout(() => {
+        if (activeBtn) activeBtn.textContent = "Set Active Model ✓";
+      }, 2000);
+    } catch {
+      if (activeBtn) {
+        activeBtn.disabled = false;
+        activeBtn.textContent = "Activation Failed";
+      }
+    }
+  });
+
   document.querySelector("#model-list")?.addEventListener("click", async (event) => {
     const hotswapBtn = (event.target as HTMLElement).closest<HTMLButtonElement>(".hotswap-btn");
     if (hotswapBtn) {
@@ -374,11 +459,11 @@ export function bindModelStepEvents(onContinue: () => void): void {
         listEl.innerHTML = result.scanned_models
           .map(
             (m) => `
-            <div class="model-card model-card-selected" style="border-color: #3b82f6;" data-model-id="${m.id}">
+            <div class="model-card model-card-selected" style="border-color: #3b82f6;" data-model-id="${escapeAttr(m.id)}">
               <div class="model-card-header">
                 <div>
-                  <p class="model-family" style="color: #60a5fa;">${m.source}</p>
-                  <h3>${m.name}</h3>
+                  <p class="model-family" style="color: #60a5fa;">${escapeHtml(m.source)}</p>
+                  <h3>${escapeHtml(m.name)}</h3>
                 </div>
                 <span class="badge badge-success">Installed & Ready</span>
               </div>

@@ -30,7 +30,7 @@ pub fn detect_hardware() -> HardwareProfile {
     let mut gpus = detect_nvidia_gpus();
     let existing_names: Vec<String> = gpus.iter().map(|gpu| gpu.name.clone()).collect();
     gpus.extend(detect_platform_gpus(&existing_names));
-    gpus.sort_by(|left, right| compare_gpu_priority(left, right));
+    gpus.sort_by(compare_gpu_priority);
     gpus.dedup_by(|left, right| left.name.eq_ignore_ascii_case(&right.name));
 
     let primary_gpu = gpus.first().cloned();

@@ -30,6 +30,12 @@ impl Default for ModelExecutor {
     }
 }
 
+impl Drop for ModelExecutor {
+    fn drop(&mut self) {
+        let _ = self.unload_current();
+    }
+}
+
 impl ModelExecutor {
     pub fn new() -> Self {
         Self::default()
@@ -81,11 +87,19 @@ impl ModelExecutor {
                 .arg(gpu_layers.to_string());
 
             match cmd.spawn() {
-                Ok(child) => {
-                    if let Ok(mut lock) = self.child_process.lock() {
-                        *lock = Some(child);
+                Ok(mut child) => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    let exited = matches!(child.try_wait(), Ok(Some(_)));
+
+                    if exited {
+                        "embedded local runner".into()
+                    } else {
+                        let binary_name = binary.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        if let Ok(mut lock) = self.child_process.lock() {
+                            *lock = Some(child);
+                        }
+                        format!("external ({})", binary_name)
                     }
-                    format!("external ({})", binary.file_name().unwrap_or_default().to_string_lossy())
                 }
                 Err(_) => "embedded local runner".into(),
             }

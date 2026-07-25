@@ -15,12 +15,18 @@ function setStep(step: number): void {
     );
   });
 
+  document.querySelectorAll<HTMLElement>("[data-sidebar-step]").forEach((item) => {
+    item.classList.toggle(
+      "sidebar-item-active",
+      Number(item.dataset.sidebarStep) === step,
+    );
+  });
+
   const label = document.querySelector<HTMLElement>("#step-label");
   if (label) {
     if (step === 5) {
-      label.classList.add("hidden");
+      label.textContent = "Management · Control Center";
     } else {
-      label.classList.remove("hidden");
       label.textContent = `Onboarding · Step ${step} of ${TOTAL_STEPS}`;
     }
   }
@@ -60,9 +66,14 @@ async function gotoStep(step: number): Promise<void> {
   }
 }
 
-
-
 window.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll<HTMLButtonElement>("[data-sidebar-step]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const step = Number(btn.dataset.sidebarStep);
+      if (step) void gotoStep(step);
+    });
+  });
+
   document
     .querySelector("#rescan-button")
     ?.addEventListener("click", () => void loadHardwareProfile());
@@ -90,8 +101,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#dashboard-back-onboarding")?.addEventListener("click", () => void gotoStep(1));
   document.querySelector("#dashboard-reload-btn")?.addEventListener("click", () => void refreshDashboardData());
   initNativeDashboard();
-
-
 
   window.addEventListener("selfapi:goto-step", (event) => {
     const custom = event as CustomEvent<number>;

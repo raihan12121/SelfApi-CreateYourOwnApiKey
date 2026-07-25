@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { escapeHtml } from "./dom-safe";
 import type { HardwareProfile } from "./types";
 
 export function formatRam(gb: number): string {
@@ -28,7 +29,7 @@ export function renderGpuCard(gpu: HardwareProfile["gpus"][number]): string {
       <div class="gpu-card-header">
         <div>
           <p class="gpu-vendor">${gpu.vendor.toUpperCase()}</p>
-          <h3>${gpu.name}</h3>
+          <h3>${escapeHtml(gpu.name)}</h3>
         </div>
         <span class="${statusClass}">${statusLabel(gpu)}</span>
       </div>
@@ -39,11 +40,11 @@ export function renderGpuCard(gpu: HardwareProfile["gpus"][number]): string {
         </div>
         <div>
           <dt>Driver</dt>
-          <dd>${gpu.driver_version ?? "Unknown"}</dd>
+          <dd>${escapeHtml(gpu.driver_version ?? "Unknown")}</dd>
         </div>
         <div>
           <dt>CUDA</dt>
-          <dd>${gpu.cuda_version ?? "N/A"}</dd>
+          <dd>${escapeHtml(gpu.cuda_version ?? "N/A")}</dd>
         </div>
       </dl>
     </article>
@@ -62,8 +63,8 @@ export function renderHardwareProfile(profile: HardwareProfile): void {
 
   if (metaEl) {
     metaEl.innerHTML = `
-      <span>OS: ${profile.os}</span>
-      <span>CPU: ${profile.cpu_model ?? "Unknown"}</span>
+      <span>OS: ${escapeHtml(profile.os)}</span>
+      <span>CPU: ${escapeHtml(profile.cpu_model ?? "Unknown")}</span>
       <span>RAM: ${formatRam(profile.total_ram_gb)}</span>
       <span>Scanned: ${new Date(profile.detected_at).toLocaleString()}</span>
     `;
