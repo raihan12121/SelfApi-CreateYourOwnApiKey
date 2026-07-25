@@ -1,0 +1,17 @@
+{
+  "name": "selfapi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn your GPU into your own AI API",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/dashboard",
+    "dev:agent": "npm run tauri:dev --workspace=apps/agent",
+    "build": "npm run build --workspace=apps/dashboard",
+    "build:agent": "npm run tauri:build --workspace=apps/agent",
+    "lint": "npm run lint --workspace=apps/dashboard"
+  }
+}

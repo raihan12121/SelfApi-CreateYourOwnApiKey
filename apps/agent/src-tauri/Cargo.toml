@@ -1,0 +1,33 @@
+[package]
+name = "selfapi-agent"
+version = "0.1.0"
+description = "SelfAPI desktop agent"
+authors = ["SelfAPI"]
+edition = "2021"
+
+[lib]
+name = "agent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.33"
+chrono = { version = "0.4", features = ["serde"] }
+nvml-wrapper = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+
+tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
+futures-util = "0.3"
+dirs = "6"
+open = "5"
+getrandom = "0.2"
+
+
+[target.'cfg(windows)'.dependencies]
+wmi = "0.14"
